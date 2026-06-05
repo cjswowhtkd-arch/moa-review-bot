@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>트렌드 나우 (Trend Now) - 실시간 정보 허브</title>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: #1e2538;
+            --primary: #4f46e5;
+            --primary-hover: #6366f1;
+            --accent: #10b981;
+            --text-main: #f3f4f6;
+            --text-sub: #9ca3af;
+        }
+        body { background-color: var(--bg-color); color: var(--text-main); font-family: sans-serif; padding: 40px 20px; margin: 0; }
+        .header-zone { text-align: center; margin-bottom: 40px; }
+        h1 { font-size: 34px; font-weight: 800; background: linear-gradient(to right, #60a5fa, #a78bfa, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 10px 0; }
+        .subtitle { color: var(--text-sub); font-size: 15px; margin: 0; }
+        .tab-container { display: flex; justify-content: center; gap: 10px; margin: 30px 0; flex-wrap: wrap; }
+        .tab-btn { background-color: #161b2c; color: var(--text-sub); border: 1px solid #2d3748; padding: 12px 24px; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 30px; transition: 0.2s; }
+        .tab-btn:hover { border-color: var(--primary-hover); color: var(--text-main); }
+        .tab-btn.active { background: linear-gradient(135deg, var(--primary), #7c3aed); color: white; border: none; box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; max-width: 1100px; margin: 0 auto; }
+        .card { background-color: var(--card-bg); padding: 25px; border-radius: 16px; border: 1px solid #2e374d; cursor: pointer; transition: 0.3s; }
+        .card:hover { transform: translateY(-5px); border-color: #60a5fa; }
+        .badge { background-color: rgba(245, 158, 11, 0.15); color: #fbbf24; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 20px; display: inline-block; margin-bottom: 12px; }
+        h3 { font-size: 18px; margin: 0 0 12px 0; line-height: 1.4; }
+        .summary { color: var(--text-sub); font-size: 13px; line-height: 1.6; margin: 0 0 20px 0; }
+        .card-footer { display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-top: 1px solid #2e374d; padding-top: 12px; }
+        .view-count { color: var(--accent); font-weight: 600; }
+        .click-guide { color: #60a5fa; font-weight: 500; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(5, 7, 12, 0.85); backdrop-filter: blur(5px); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background-color: #151b2c; padding: 35px; border-radius: 24px; border: 1px solid #3b82f6; max-width: 500px; width: 90%; position: relative; }
+        .close-btn { position: absolute; top: 20px; right: 25px; font-size: 26px; color: var(--text-sub); cursor: pointer; }
+        .more-btn { display: block; text-align: center; background: linear-gradient(to right, #3b82f6, var(--primary)); color: white; padding: 14px; text-decoration: none; border-radius: 12px; margin-top: 25px; font-weight: 700; }
+    </style>
+</head>
+<body>
+
+    <div class="header-zone">
+        <h1>✨ Trend Now 트렌드인사이트</h1>
+        <p class="subtitle">파이어베이스 실시간 원격 창고에서 카테고리별 데이터를 실시간 동기화합니다.</p>
+    </div>
+
+    <div class="tab-container">
+        <button id="btn-drama" class="tab-btn active" onclick="switchCategory('drama')">📺 드라마/웹툰</button>
+        <button id="btn-tech" class="tab-btn" onclick="switchCategory('tech')">💻 IT/테크</button>
+        <button id="btn-dessert" class="tab-btn" onclick="switchCategory('dessert')">🍰 디저트 핫플</button>
+        <button id="btn-news" class="tab-btn" onclick="switchCategory('news')">📰 실시간 뉴스</button>
+        <button id="btn-stock" class="tab-btn" onclick="switchCategory('stock')">📈 오늘의 주식</button>
+    </div>
+
+    <div class="grid" id="itemGrid">
+        <p style="text-align: center; width: 100%; color: var(--text-sub);">창고 데이터를 다운로드하는 중...</p>
+    </div>
+
+    <div id="infoModal" class="modal" onclick="closeModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <span class="close-btn" onclick="document.getElementById('infoModal').style.display='none'">&times;</span>
+            <div id="modalBadge" class="badge">🔥 실시간 랭킹</div>
+            <h2 id="modalTitle" style="margin: 10px 0 15px 0; color: white;"></h2>
+            <p id="modalContent" style="color: #cbd5e1; line-height: 1.7; font-size: 14px;"></p>
+            <a id="modalLink" href="#" target="_blank" class="more-btn">신뢰성 검증 원문 보러가기 ➔</a>
+        </div>
+    </div>
+
+    <script type="module">
+        let firebaseDbUrl = "https://chosanghee00001-default-rtdb.firebaseio.com";
+        if (!firebaseDbUrl.endsWith("/")) {
+            firebaseDbUrl += "/";
+        }
+
+        let currentCategory = 'drama';
+        let fetchedData = {};
+
+        async function loadDatabase() {
+            try {
+                // 특정 경로가 아닌 대분류 categories.json 전체를 안전하게 덤프하여 수신
+                const response = await fetch(`${firebaseDbUrl}categories.json`);
+                fetchedData = await response.json() || {};
+                renderCards();
+            } catch (error) {
+                document.getElementById('itemGrid').innerHTML = '<p style="text-align:center; width:100%; color:var(--text-sub);">데이터 로드에 실패했습니다.</p>';
+            }
+        }
+
+        function renderCards() {
+            const grid = document.getElementById('itemGrid');
+            grid.innerHTML = '';
+            
+            const items = fetchedData[currentCategory] || [];
+            
+            if (items.length === 0) {
+                grid.innerHTML = '<p style="text-align:center; width:100%; color:var(--text-sub);">현재 카테고리에 동기화할 데이터가 존재하지 않습니다.</p>';
+                return;
+            }
+
+            items.forEach((item, index) => {
+                if(!item) return;
+                const stringifiedItem = encodeURIComponent(JSON.stringify(item));
+                
+                // 임의의 조회수 생성기 (실용성을 위해 카드마다 고유 숫자 부여)
+                const mockView = Math.floor(Math.hash ? Math.hash(item.title) % 2000 : 350) + 500;
+                
+                grid.innerHTML += `
+                    <div class="card" onclick="openModal('${stringifiedItem}', ${index + 1})">
+                        <span class="badge">TOP ${index + 1}</span>
+                        <h3>${item.title}</h3>
+                        <p class="summary">${item.content}</p>
+                        <div class="card-footer">
+                            <span class="view-count">👁️ ${mockView} views</span>
+                            <span class="click-guide">자세히 보기 ➔</span>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        window.switchCategory = function(category) {
+            currentCategory = category;
+            const buttons = document.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            
+            // 클릭된 버튼을 찾아 활성화 스타일 부여
+            const activeBtn = document.getElementById(`btn-${category}`);
+            if (activeBtn) activeBtn.classList.add('active');
+            
+            renderCards();
+        }
+
+        window.openModal = function(itemStr, rank) {
+            const item = JSON.parse(decodeURIComponent(itemStr));
+            
+            document.getElementById('modalBadge').innerText = `🔥 해당 카테고리 실시간 ${rank}위 정보`;
+            document.getElementById('modalTitle').innerText = item.title;
+            document.getElementById('modalContent').innerText = item.content;
+            document.getElementById('modalLink').href = item.link;
+            
+            document.getElementById('infoModal').style.display = 'flex';
+        }
+
+        window.closeModal = function(e) {
+            document.getElementById('infoModal').style.display = 'none';
+        }
+
+        loadDatabase();
+    </script>
+</body>
+</html>
