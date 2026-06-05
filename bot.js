@@ -1,4 +1,4 @@
-// [bot.js] - 가상 컴퓨터에서 100% 실행되는 최종 안정화 버전입니다.
+// [bot.js] - 깃허브 가상 컴퓨터가 100% 좋아하는 서버 전용 최종 코드입니다.
 
 async function fetchTrendingAndSave() {
     try {
@@ -18,14 +18,13 @@ async function fetchTrendingAndSave() {
             titles.push(match[1]);
         }
         
-        // 1위와 2위 제목 뽑기 (0번째는 전체 채널 제목인 경우가 많아 1, 2번 사용)
+        // 1위와 2위 제목 뽑기 (0번째는 전체 채널 제목이므로 1, 2번 사용)
         const hotTitle1 = titles[1] || "요즘 뜨는 화제의 아이템";
         const hotTitle2 = titles[2] || "실시간 인기 추천작";
 
         console.log("✅ 수집 성공! 1위:", hotTitle1, " | 2위:", hotTitle2);
 
         // 2. 파이어베이스 리얼타임 데이터베이스 주소로 데이터를 직접 전송합니다.
-        // 🚨 아래 주소가 여러분의 진짜 파이어베이스 주소와 똑같은지 다시 한번 확인하세요!
         const firebaseDbUrl = "https://chosanghee00001-default-rtdb.firebaseio.com";
 
         console.log("📦 파이어베이스 창고에 실시간 데이터를 저장하는 중...");
