@@ -23,6 +23,7 @@ const ARTICLE_TIMEOUT_MS = toPositiveInt(process.env.ARTICLE_TIMEOUT_MS, 6500);
 const ENABLE_DAUM_HTML = process.env.ENABLE_DAUM_HTML !== "0";
 const RECENCY_HOURS = toPositiveInt(process.env.RECENCY_HOURS, 48);
 const STRICT_RECENCY = process.env.STRICT_RECENCY !== "0";
+const PREFER_NAVER_LINKS = process.env.PREFER_NAVER_LINKS !== "0";
 const RECENCY_CUTOFF_MS = Date.now() - RECENCY_HOURS * 60 * 60 * 1000;
 const GOOGLE_RECENCY_DAYS = Math.max(1, Math.ceil(RECENCY_HOURS / 24));
 const DRY_RUN = process.env.DRY_RUN === "1";
@@ -183,27 +184,46 @@ async function fetchCategoryTrends(category) {
     .map((item) => ({ ...item, score: scoreCandidate(item, category) }))
     .sort((a, b) => b.score - a.score);
 
+  const naverHydrated = sortedHydrated.filter((item) =>
+    (item.sourceKinds || []).includes("naver")
+  );
   const imagePreferred =
-    sortedHydrated.filter((item) => item.thumbnailSource !== "fallback").length >= MAX_ITEMS
-      ? sortedHydrated.filter((item) => item.thumbnailSource !== "fallback")
-      : sortedHydrated;
+    naverHydrated.length >= MAX_ITEMS
+      ? naverHydrated
+      : sortedHydrated.filter((item) => item.thumbnailSource !== "fallback").length >= MAX_ITEMS
+        ? sortedHydrated.filter((item) => item.thumbnailSource !== "fallback")
+        : sortedHydrated;
 
   const finalItems = imagePreferred
     .slice(0, MAX_ITEMS)
-    .map((item, index) => ({
-      rank: index + 1,
-      title: item.title,
-      content: buildContent(item),
-      link: item.link,
-      img: item.img || FALLBACK_IMAGES[category.key],
-      source: item.primarySource,
-      sources: item.sourceNames,
-      sourceCount: item.sourceNames.length,
-      sourceKinds: item.sourceKinds,
-      score: item.score,
-      publishedAt: item.publishedAt || null,
-      thumbnailSource: item.thumbnailSource || "fallback",
-    }));
+    .map((item, index) => {
+      const outputLink =
+        PREFER_NAVER_LINKS && !isNaverUrl(item.link)
+          ? buildNaverNewsSearchUrl(item.title)
+          : item.link;
+      const outputSource = isNaverUrl(outputLink) ? "네이버 뉴스" : item.primarySource;
+      const outputSources = uniqueCompact([outputSource, ...item.sourceNames]);
+      const outputItem = {
+        ...item,
+        link: outputLink,
+        primarySource: outputSource,
+        sourceNames: outputSources,
+      };
+
+      return {
+        rank: index + 1,
+        title: item.title,
+        content: buildContent(outputItem),
+        link: outputLink,
+        img: item.img || FALLBACK_IMAGES[category.key],
+        source: outputSource,
+        sources: outputSources,
+        sourceCount: outputSources.length,
+        sourceKinds: item.sourceKinds,
+        publishedAt: item.publishedAt || null,
+        thumbnailSource: item.thumbnailSource || "fallback",
+      };
+    });
 
   const staleCount = finalItems.filter((item) => !isFreshCandidate(item)).length;
   console.log(
@@ -256,17 +276,21 @@ async function fetchNaverNews(query, category) {
   });
 
   return (json.items || []).map((item) => {
-    const link = item.originallink || item.link;
+    const naverLink = isNaverUrl(item.link)
+      ? item.link
+      : buildNaverNewsSearchUrl(cleanTitle(item.title));
+    const crawlLink = item.originallink || item.link || naverLink;
     return createCandidate({
       title: item.title,
       description: item.description,
-      link,
+      link: naverLink,
+      crawlLink,
       publishedAt: item.pubDate,
       query,
       category,
       sourceKind: "naver",
-      sourceName: guessSourceName(link) || "Naver News API",
-      primarySource: guessSourceName(link) || "Naver News",
+      sourceName: "네이버 뉴스",
+      primarySource: "네이버 뉴스",
     });
   });
 }
@@ -364,7 +388,8 @@ async function hydrateArticle(candidate, category) {
     pageResult = null;
   }
 
-  const link = pageResult?.finalUrl || directUrl;
+  const keepNaverLink = (candidate.sourceKinds || []).includes("naver");
+  const link = keepNaverLink ? candidate.link : pageResult?.finalUrl || directUrl;
   const img =
     pageResult?.img ||
     candidate.feedImage ||
@@ -401,7 +426,9 @@ async function extractThumbnailFromArticle(url, fallback) {
 }
 
 async function resolveDirectArticleUrl(candidate) {
-  const decodedUrl = decodeGoogleNewsUrl(candidate.link) || candidate.link;
+  const rawLink = candidate.crawlLink || candidate.link;
+  const decodedUrl = decodeGoogleNewsUrl(rawLink) || rawLink;
+  if ((candidate.sourceKinds || []).includes("naver")) return decodedUrl;
   if (!isGoogleNewsUrl(decodedUrl)) return decodedUrl;
 
   if (ENABLE_DAUM_HTML) {
@@ -479,6 +506,7 @@ function createCandidate(input) {
     title,
     description: stripHtml(input.description || ""),
     link,
+    crawlLink: normalizeUrl(input.crawlLink || ""),
     feedImage: normalizeImageUrl(input.feedImage || "", link),
     publishedAt: input.publishedAt || null,
     query: input.query,
@@ -502,9 +530,11 @@ function mergeCandidates(candidates, category) {
     if (existing) {
       existing.sourceNames = uniqueCompact([...existing.sourceNames, ...candidate.sourceNames]);
       existing.sourceKinds = uniqueCompact([...existing.sourceKinds, ...candidate.sourceKinds]);
-      if (shouldPreferCandidateLink(existing.link, candidate.link)) {
+      if (shouldPreferCandidateLink(existing, candidate)) {
         existing.link = candidate.link;
+        existing.crawlLink = candidate.crawlLink || existing.crawlLink;
         existing.primarySource = candidate.primarySource || existing.primarySource;
+        existing.sourceNames = uniqueCompact([...candidate.sourceNames, ...existing.sourceNames]);
       }
       existing.feedImage = existing.feedImage || candidate.feedImage;
       existing.description = longerText(existing.description, candidate.description);
@@ -647,8 +677,9 @@ function relevanceScore(text, terms) {
 }
 
 function buildContent(item) {
-  const sources = item.sourceNames?.slice(0, 3).join(", ") || item.primarySource || "뉴스 소스";
-  const sourceMore = item.sourceNames?.length > 3 ? ` 외 ${item.sourceNames.length - 3}곳` : "";
+  const sourceList = uniqueCompact([item.primarySource, ...(item.sourceNames || [])]);
+  const sources = sourceList.slice(0, 3).join(", ") || "뉴스 소스";
+  const sourceMore = sourceList.length > 3 ? ` 외 ${sourceList.length - 3}곳` : "";
   const dateText = item.publishedAt
     ? new Intl.DateTimeFormat("ko-KR", {
         dateStyle: "medium",
@@ -656,14 +687,7 @@ function buildContent(item) {
         timeZone: "Asia/Seoul",
       }).format(new Date(item.publishedAt))
     : "실시간";
-  const thumbnailText =
-    item.thumbnailSource === "article-first-image"
-      ? "원문 페이지의 첫 번째 기사 이미지를 추출했습니다."
-      : item.thumbnailSource === "og-image"
-        ? "원문 페이지의 대표 이미지를 추출했습니다."
-        : "원문 이미지가 막힌 경우에만 카테고리 대체 이미지를 적용했습니다.";
-
-  return `최근 ${RECENCY_HOURS}시간 기준 · 신뢰도 점수 ${item.score}점 · ${sources}${sourceMore}에서 선별했습니다. 게시 기준: ${dateText}. ${thumbnailText}`;
+  return `최근 ${RECENCY_HOURS}시간 기준 · ${sources}${sourceMore}에서 선별했습니다. 게시 기준: ${dateText}.`;
 }
 
 function extractArticleImages(html, baseUrl) {
@@ -776,9 +800,19 @@ function decodeGoogleNewsUrl(url) {
   }
 }
 
-function shouldPreferCandidateLink(currentLink, candidateLink) {
+function shouldPreferCandidateLink(existing, candidate) {
+  const currentLink = existing?.link;
+  const candidateLink = candidate?.link;
   if (!candidateLink) return false;
   if (!currentLink) return true;
+
+  const existingIsNaver =
+    (existing.sourceKinds || []).includes("naver") || isNaverNewsUrl(currentLink);
+  const candidateIsNaver =
+    (candidate.sourceKinds || []).includes("naver") || isNaverNewsUrl(candidateLink);
+
+  if (candidateIsNaver && !existingIsNaver) return true;
+  if (existingIsNaver && !candidateIsNaver) return false;
   if (isGoogleNewsUrl(currentLink) && !isGoogleNewsUrl(candidateLink)) return true;
   if (isGoogleNewsUrl(candidateLink)) return false;
   return false;
@@ -792,13 +826,42 @@ function isGoogleNewsUrl(value) {
   }
 }
 
+function isNaverNewsUrl(value) {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host.includes("news.naver.com") || host.includes("n.news.naver.com");
+  } catch {
+    return false;
+  }
+}
+
+function isNaverUrl(value) {
+  try {
+    return new URL(value).hostname.toLowerCase().includes("naver.com");
+  } catch {
+    return false;
+  }
+}
+
+function buildNaverNewsSearchUrl(title) {
+  return (
+    "https://search.naver.com/search.naver?" +
+    new URLSearchParams({
+      where: "news",
+      query: title,
+      sort: "1",
+    }).toString()
+  );
+}
+
 async function startRobot() {
   console.log("TOP 1~20 실시간 멀티소스 트렌드 수집을 시작합니다.");
   console.log(
     `소스 상태: Google=ON, Naver=${process.env.NAVER_CLIENT_ID ? "ON" : "OFF"}, ` +
       `Kakao/Daum=${process.env.KAKAO_REST_API_KEY ? "ON" : "OFF"}, ` +
       `Daum HTML=${ENABLE_DAUM_HTML ? "ON" : "OFF"}, ` +
-      `최신 기준=${RECENCY_HOURS}시간 이내${STRICT_RECENCY ? " 엄격 적용" : " 점수 우선"}`
+      `클릭 링크=${PREFER_NAVER_LINKS ? "네이버 우선" : "원문 우선"}, ` +
+      `최신 기준=${RECENCY_HOURS}시간 이내${STRICT_RECENCY ? " 엄격 적용" : " 완화 적용"}`
   );
 
   const entries = await mapLimit(CATEGORIES, CATEGORY_CONCURRENCY, async (category) => [
@@ -826,6 +889,7 @@ async function startRobot() {
                 naverWeightedItems: items.filter((item) =>
                   (item.sourceKinds || []).includes("naver")
                 ).length,
+                naverLinkItems: items.filter((item) => isNaverUrl(item.link)).length,
                 newestPublishedAt: newestPublishedAt(items),
                 oldestPublishedAt: oldestPublishedAt(items),
               },
