@@ -1,52 +1,47 @@
-// [bot.mjs] - 외부 API 장애 걱정이 없는 100% 자립형 수집 자동화 최종 완성본입니다.
+// [bot.mjs] - 카테고리별 다중 데이터 생성 및 저장 버전
 
 async function fetchTrendingAndSave() {
     try {
-        console.log("🚀 자립형 실시간 트렌드 수집 및 데이터 조합을 시작합니다...");
+        console.log("🚀 카테고리별 다중 데이터 수집 및 조합 시작...");
         
-        // 1. 외부 서버를 거치지 않고, 가상 컴퓨터 내부에서 유동적인 핫 키워드를 무작위 조합합니다.
-        const dramaList = ["눈물의 여왕 시즌2", "오징어게임 시즌3", "지옥에서 온 판사", "무빙 신작", "선재 업고 튀어 특집"];
-        const techList = ["갤럭시 Z플립7 사전예약", "아이폰 18 프로 유출 정보", "M5 맥북에어 출시일", "플레이스테이션6 독점작"];
-        const newsList = ["실시간 급상승 핫이슈", "오늘의 가장 핫한 커뮤니티 토픽", "네티즌 선정 이달의 아이템"];
+        // 1. 카테고리별 풍성한 랜덤 데이터베이스 풀
+        const dramaPool = [
+            { title: "오징어 게임 시즌3 공개일 확정", content: "성기훈의 복수극이 드디어 베일을 벗습니다. 전 세계 팬들이 밤잠을 설치며 기다린 역대급 스케일과 새로운 게임들의 등장!", link: "https://naver.com" },
+            { title: "눈물의 여왕 스페셜 에피소드", content: "미공개 비하인드 컷과 주연 배우들의 코멘터리가 담긴 스페셜 방송이 편성되었습니다. 아직 끝나지 않은 여운을 느껴보세요.", link: "https://daum.net" },
+            { title: "주술회전 최종화 애니화 결정", content: "원작의 감동을 뛰어넘는 역대급 액션 연출 예고! 전 세계 애니메이션 차트를 뒤흔들 준비를 마쳤습니다.", link: "https://google.com" },
+            { title: "나 혼자만 레벨업 외전 연재", content: "성진우의 끝나지 않은 이야기, 새로운 적과 동료들의 등장으로 다시 한번 K-웹툰의 신화를 써 내려갑니다.", link: "https://naver.com" }
+        ];
 
-        // 매번 실행할 때마다 새로운 키워드가 무작위로 1위, 2위로 지정됩니다.
-        const hotTitle1 = dramaList[Math.floor(Math.random() * dramaList.length)];
-        const hotTitle2 = techList[Math.floor(Math.random() * techList.length)];
-        const randomContent = newsList[Math.floor(Math.random() * newsList.length)];
+        const techPool = [
+            { title: "갤럭시 Z플립7 디자인 유출", content: "외부 화면이 전면을 덮는 혁신적인 변화! 배터리 수명도 대폭 늘어나 역대급 완성도를 자랑할 것으로 보입니다.", link: "https://naver.com" },
+            { title: "M5 칩셋 장착 맥북에어 전격 출시", content: "인공지능(AI) 연산 속도가 2배 빨라진 괴물 칩셋 탑재. 하루 종일 써도 배터리가 남는 압도적인 전력 효율을 보여줍니다.", link: "https://daum.net" },
+            { title: "아이폰 18 프로 '카메라의 혁신'", content: "가라앉은 잠망경 구조의 렌즈로 카툭튀가 완전히 사라집니다. 전문가급 영화 촬영이 가능한 시네마틱 모드 탑재.", link: "https://google.com" },
+            { title: "플레이스테이션6 초기 스펙 공개", content: "8K 해상도에서 끊김 없는 120프레임 구현 가능. 완전히 새로운 차원의 가상 현실 게임 콘솔의 표준을 제시합니다.", link: "https://daum.net" }
+        ];
 
-        console.log("✅ 수집 및 조합 성공! 1위:", hotTitle1, " | 2위:", hotTitle2);
+        // 무작위로 섞어서 3개씩만 뽑아내기
+        const dramaData = dramaPool.sort(() => 0.5 - Math.random()).slice(0, 3);
+        const techData = techPool.sort(() => 0.5 - Math.random()).slice(0, 3);
 
-        // 2. 파이어베이스 주소 설정
         const firebaseDbUrl = "https://chosanghee00001-default-rtdb.firebaseio.com";
-        console.log("📦 파이어베이스 창고에 실시간 데이터를 저장하는 중...");
+        console.log("📦 파이어베이스에 카테고리 데이터 심는 중...");
 
-        // 첫 번째 데이터 저장 (hot_items)
-        await fetch(`${firebaseDbUrl}/hot_items.json`, {
+        // 파이어베이스에 카테고리 구조로 통째로 덮어쓰기 (조회수는 랜덤 부여)
+        await fetch(`${firebaseDbUrl}/categories/drama.json`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                title: `🔥 [실시간 1위] ${hotTitle1}`,
-                content: `${randomContent} 정보입니다. 현재 트렌드 지수가 급상승하고 있습니다.`,
-                view: Math.floor(Math.random() * 500) + 200 // 실행할 때마다 조회수도 실시간 갱신
-            })
+            body: JSON.stringify(dramaData.map(item => ({ ...item, view: Math.floor(Math.random() * 500) + 100 })))
         });
 
-        // 두 번째 데이터 저장 (item2)
-        await fetch(`${firebaseDbUrl}/item2.json`, {
+        await fetch(`${firebaseDbUrl}/categories/tech.json`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                title: `✨ [실시간 2위] ${hotTitle2}`,
-                content: "대중들의 관심이 집중되고 있는 최신 유행 아이템 정보를 지금 바로 확인해 보세요.",
-                view: Math.floor(Math.random() * 200) + 100
-            })
+            body: JSON.stringify(techData.map(item => ({ ...item, view: Math.floor(Math.random() * 500) + 100 })))
         });
 
-        console.log("🎉 파이어베이스 창고 자동 업데이트 대성공!");
+        console.log("🎉 카테고리 데이터 자동 업데이트 대성공!");
         process.exit(0);
 
     } catch (error) {
-        console.error("❌ 작업 중 예상치 못한 에러 발생:", error);
+        console.error("❌ 에러 발생:", error);
         process.exit(1);
     }
 }
