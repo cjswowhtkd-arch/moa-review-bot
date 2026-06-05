@@ -21,6 +21,10 @@ const CATEGORY_CONCURRENCY = toPositiveInt(process.env.CATEGORY_CONCURRENCY, 2);
 const HTTP_TIMEOUT_MS = toPositiveInt(process.env.HTTP_TIMEOUT_MS, 9000);
 const ARTICLE_TIMEOUT_MS = toPositiveInt(process.env.ARTICLE_TIMEOUT_MS, 6500);
 const ENABLE_DAUM_HTML = process.env.ENABLE_DAUM_HTML !== "0";
+const RECENCY_HOURS = toPositiveInt(process.env.RECENCY_HOURS, 48);
+const STRICT_RECENCY = process.env.STRICT_RECENCY !== "0";
+const RECENCY_CUTOFF_MS = Date.now() - RECENCY_HOURS * 60 * 60 * 1000;
+const GOOGLE_RECENCY_DAYS = Math.max(1, Math.ceil(RECENCY_HOURS / 24));
 const DRY_RUN = process.env.DRY_RUN === "1";
 
 const USER_AGENT =
@@ -46,11 +50,14 @@ const CATEGORIES = [
     key: "drama",
     label: "드라마/웹툰",
     queries: [
-      "드라마 신작 라인업",
-      "웹툰 신작 라인업",
-      "OTT 한국 드라마 신작",
-      "넷플릭스 티빙 디즈니플러스 드라마",
-      "네이버웹툰 카카오웹툰 신작",
+      "오늘 드라마 웹툰 화제",
+      "최신 한국 드라마 OTT 공개",
+      "웹툰 신작 오늘 공개",
+      "넷플릭스 티빙 디즈니플러스 드라마 최신",
+      "네이버웹툰 카카오웹툰 최신 화제",
+      "드라마 시청률 오늘",
+      "OTT 순위 드라마 오늘",
+      "웹툰 원작 드라마 최신",
     ],
     terms: ["드라마", "웹툰", "신작", "라인업", "OTT", "넷플릭스", "티빙"],
   },
@@ -58,11 +65,14 @@ const CATEGORIES = [
     key: "tech",
     label: "IT/테크",
     queries: [
-      "IT 테크 신제품 출시",
-      "AI 반도체 스마트폰 신제품",
-      "전자제품 출시 노트북 스마트폰",
-      "테크 기업 신제품 발표",
-      "국내 IT 업계 최신 뉴스",
+      "오늘 IT 테크 최신 뉴스",
+      "AI 반도체 스마트폰 오늘",
+      "전자제품 신제품 출시 최신",
+      "테크 기업 발표 오늘",
+      "국내 IT 업계 실시간",
+      "삼성 애플 구글 AI 최신",
+      "노트북 스마트폰 신제품 오늘",
+      "테크 트렌드 화제",
     ],
     terms: ["IT", "테크", "AI", "반도체", "스마트폰", "신제품", "전자"],
   },
@@ -70,11 +80,20 @@ const CATEGORIES = [
     key: "dessert",
     label: "디저트 핫플",
     queries: [
-      "성수동 카페 디저트 맛집",
-      "서울 핫플 카페 디저트",
-      "신상 디저트 맛집",
-      "카페 투어 핫플레이스",
-      "베이커리 디저트 인기 맛집",
+      "오늘 서울 카페 디저트 핫플",
+      "성수동 신상 카페 오픈",
+      "서울 디저트 맛집 최신",
+      "카페 디저트 오늘 화제",
+      "베이커리 디저트 신상",
+      "핫플 카페 팝업 오늘",
+      "성수 연남 한남 카페 최신",
+      "디저트 브랜드 신메뉴 오늘",
+      "스타벅스 투썸 메가커피 신메뉴",
+      "서울 신상 맛집 카페 오늘",
+      "성수 팝업스토어 카페",
+      "디저트 카페 트렌드 최신",
+      "유명 디저트 브랜드 출시",
+      "백화점 디저트 팝업 오늘",
     ],
     terms: ["성수", "카페", "디저트", "맛집", "핫플", "베이커리"],
   },
@@ -84,9 +103,12 @@ const CATEGORIES = [
     queries: [
       "정치 사회 경제 실시간 주요 뉴스",
       "오늘 주요 뉴스 속보",
-      "경제 사회 정치 주요 이슈",
-      "국내 주요 뉴스 종합",
+      "경제 사회 정치 오늘 이슈",
+      "국내 주요 뉴스 오늘 종합",
       "국제 경제 사회 최신 뉴스",
+      "오늘 많이 본 뉴스",
+      "실시간 이슈 속보",
+      "한국 주요 뉴스 최신",
     ],
     terms: ["정치", "사회", "경제", "주요", "뉴스", "속보", "국내"],
   },
@@ -94,11 +116,14 @@ const CATEGORIES = [
     key: "stock",
     label: "증시 특징주",
     queries: [
-      "국내 주식 증시 특징주 금융",
-      "코스피 코스닥 특징주",
-      "국내 증시 마감 특징주",
-      "증권가 추천주 실적 주가",
-      "금융 시장 주식 투자 뉴스",
+      "오늘 국내 주식 증시 특징주",
+      "코스피 코스닥 특징주 오늘",
+      "국내 증시 실시간 특징주",
+      "증권가 오늘 실적 주가",
+      "금융 시장 주식 최신 뉴스",
+      "상한가 급등주 오늘",
+      "코스피 코스닥 마감 오늘",
+      "증권사 리포트 오늘",
     ],
     terms: ["주식", "증시", "특징주", "코스피", "코스닥", "금융", "증권"],
   },
@@ -109,11 +134,11 @@ async function fetchCategoryTrends(category) {
 
   const sourceJobs = [];
   for (const query of category.queries) {
-    sourceJobs.push(() => fetchGoogleNews(query, category));
-
     if (process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET) {
       sourceJobs.push(() => fetchNaverNews(query, category));
     }
+
+    sourceJobs.push(() => fetchGoogleNews(query, category));
 
     if (process.env.KAKAO_REST_API_KEY) {
       sourceJobs.push(() => fetchKakaoDaumSearch(query, category));
@@ -132,13 +157,16 @@ async function fetchCategoryTrends(category) {
   );
 
   const candidates = sourceResults.flat();
-  const merged = mergeCandidates(candidates, category)
+  const freshCandidates = STRICT_RECENCY
+    ? candidates.filter((item) => isFreshCandidate(item))
+    : candidates;
+  const merged = mergeCandidates(freshCandidates, category)
     .map((item) => ({ ...item, score: scoreCandidate(item, category) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, ARTICLE_POOL_SIZE);
 
   console.log(
-    `  - 원본 후보 ${candidates.length}개, 중복 정리 후 ${merged.length}개`
+    `  - 원본 후보 ${candidates.length}개, ${RECENCY_HOURS}시간 이내 ${freshCandidates.length}개, 중복 정리 후 ${merged.length}개`
   );
 
   const hydrated = await mapLimit(
@@ -147,8 +175,11 @@ async function fetchCategoryTrends(category) {
     (candidate) => hydrateArticle(candidate, category)
   );
 
-  const sortedHydrated = hydrated
-    .filter(Boolean)
+  const freshHydrated = hydrated.filter((item) =>
+    item && (!STRICT_RECENCY || isFreshCandidate(item))
+  );
+
+  const sortedHydrated = freshHydrated
     .map((item) => ({ ...item, score: scoreCandidate(item, category) }))
     .sort((a, b) => b.score - a.score);
 
@@ -168,20 +199,26 @@ async function fetchCategoryTrends(category) {
       source: item.primarySource,
       sources: item.sourceNames,
       sourceCount: item.sourceNames.length,
+      sourceKinds: item.sourceKinds,
       score: item.score,
       publishedAt: item.publishedAt || null,
       thumbnailSource: item.thumbnailSource || "fallback",
     }));
 
-  console.log(`  - 최종 저장 ${finalItems.length}/${MAX_ITEMS}개`);
+  const staleCount = finalItems.filter((item) => !isFreshCandidate(item)).length;
+  console.log(
+    `  - 최종 저장 ${finalItems.length}/${MAX_ITEMS}개` +
+      (staleCount ? `, 오래된 항목 ${staleCount}개 제외 필요` : "")
+  );
   return finalItems;
 }
 
 async function fetchGoogleNews(query, category) {
+  const recencyQuery = `${query} when:${GOOGLE_RECENCY_DAYS}d`;
   const url =
     "https://news.google.com/rss/search?" +
     new URLSearchParams({
-      q: query,
+      q: recencyQuery,
       hl: "ko",
       gl: "KR",
       ceid: "KR:ko",
@@ -283,9 +320,15 @@ async function fetchDaumNewsHtml(query, category) {
   for (const match of text.matchAll(/<a\b[^>]*href=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi)) {
     const link = normalizeUrlWithBase(match[2], "https://search.daum.net");
     const title = stripHtml(match[3]);
+    const nearbyHtml = text.slice(Math.max(0, match.index - 600), match.index + 1800);
+    const publishedAt = extractDateFromSearchHtml(nearbyHtml);
     const key = canonicalUrl(link);
 
     if (!title || title.length < 8 || seen.has(key) || !isLikelyNewsUrl(link)) {
+      continue;
+    }
+
+    if (STRICT_RECENCY && !isFreshPublishedAt(publishedAt)) {
       continue;
     }
 
@@ -295,7 +338,7 @@ async function fetchDaumNewsHtml(query, category) {
         title,
         description: "",
         link,
-        publishedAt: null,
+        publishedAt,
         query,
         category,
         sourceKind: "daum_html",
@@ -485,7 +528,7 @@ function scoreCandidate(item, category) {
 
   const sourceKindScore = {
     google: 10,
-    naver: 14,
+    naver: 42,
     kakao: 11,
     daum_html: 8,
   };
@@ -500,6 +543,7 @@ function scoreCandidate(item, category) {
   score += relevanceScore(`${item.title} ${item.description}`, category.terms);
   score += item.img || item.feedImage ? 3 : 0;
 
+  if ((item.sourceKinds || []).includes("naver")) score += 28;
   if (!isGoogleNewsUrl(item.link)) score += 12;
   if (item.thumbnailSource === "article-first-image") score += 22;
   if (item.thumbnailSource === "og-image") score += 10;
@@ -526,15 +570,70 @@ function sourceAuthorityScore(item) {
   return 8;
 }
 
+function isFreshCandidate(item) {
+  return isFreshPublishedAt(item?.publishedAt);
+}
+
+function isFreshPublishedAt(value) {
+  const time = Date.parse(value || "");
+  if (Number.isNaN(time)) return false;
+  return time >= RECENCY_CUTOFF_MS && time <= Date.now() + 60 * 60 * 1000;
+}
+
+function extractDateFromSearchHtml(html) {
+  const text = stripHtml(html);
+  const now = new Date();
+
+  const minuteMatch = text.match(/(\d{1,3})\s*분\s*전/);
+  if (minuteMatch) {
+    return new Date(Date.now() - Number(minuteMatch[1]) * 60 * 1000).toISOString();
+  }
+
+  const hourMatch = text.match(/(\d{1,3})\s*시간\s*전/);
+  if (hourMatch) {
+    return new Date(Date.now() - Number(hourMatch[1]) * 60 * 60 * 1000).toISOString();
+  }
+
+  const dayMatch = text.match(/(\d{1,2})\s*일\s*전/);
+  if (dayMatch) {
+    return new Date(Date.now() - Number(dayMatch[1]) * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  const fullDateMatch = text.match(/(20\d{2})[.\-/년\s]+(\d{1,2})[.\-/월\s]+(\d{1,2})/);
+  if (fullDateMatch) {
+    return new Date(
+      Number(fullDateMatch[1]),
+      Number(fullDateMatch[2]) - 1,
+      Number(fullDateMatch[3])
+    ).toISOString();
+  }
+
+  const monthDayMatch = text.match(/(?:^|\s)(\d{1,2})[.월\s]+(\d{1,2})(?:일)?(?:\s|$)/);
+  if (monthDayMatch) {
+    const date = new Date(
+      now.getFullYear(),
+      Number(monthDayMatch[1]) - 1,
+      Number(monthDayMatch[2])
+    );
+    return date.toISOString();
+  }
+
+  return "";
+}
+
 function recencyScore(value) {
   const time = Date.parse(value || "");
-  if (Number.isNaN(time)) return 3;
+  if (Number.isNaN(time)) return STRICT_RECENCY ? -100 : 3;
 
   const ageHours = (Date.now() - time) / 36e5;
+  if (STRICT_RECENCY && ageHours > RECENCY_HOURS) return -100;
+  if (ageHours <= 1) return 32;
+  if (ageHours <= 3) return 28;
   if (ageHours <= 6) return 18;
   if (ageHours <= 24) return 15;
-  if (ageHours <= 72) return 10;
-  if (ageHours <= 168) return 6;
+  if (ageHours <= 48) return 12;
+  if (ageHours <= 72) return 4;
+  if (ageHours <= 168) return 1;
   return 2;
 }
 
@@ -564,7 +663,7 @@ function buildContent(item) {
         ? "원문 페이지의 대표 이미지를 추출했습니다."
         : "원문 이미지가 막힌 경우에만 카테고리 대체 이미지를 적용했습니다.";
 
-  return `신뢰도 점수 ${item.score}점 · ${sources}${sourceMore} 기준으로 선별했습니다. 수집 시각/게시 기준: ${dateText}. ${thumbnailText}`;
+  return `최근 ${RECENCY_HOURS}시간 기준 · 신뢰도 점수 ${item.score}점 · ${sources}${sourceMore}에서 선별했습니다. 게시 기준: ${dateText}. ${thumbnailText}`;
 }
 
 function extractArticleImages(html, baseUrl) {
@@ -698,7 +797,8 @@ async function startRobot() {
   console.log(
     `소스 상태: Google=ON, Naver=${process.env.NAVER_CLIENT_ID ? "ON" : "OFF"}, ` +
       `Kakao/Daum=${process.env.KAKAO_REST_API_KEY ? "ON" : "OFF"}, ` +
-      `Daum HTML=${ENABLE_DAUM_HTML ? "ON" : "OFF"}`
+      `Daum HTML=${ENABLE_DAUM_HTML ? "ON" : "OFF"}, ` +
+      `최신 기준=${RECENCY_HOURS}시간 이내${STRICT_RECENCY ? " 엄격 적용" : " 점수 우선"}`
   );
 
   const entries = await mapLimit(CATEGORIES, CATEGORY_CONCURRENCY, async (category) => [
@@ -722,6 +822,12 @@ async function startRobot() {
                   (item) => item.thumbnailSource === "article-first-image"
                 ).length,
                 fallbackImages: items.filter((item) => item.thumbnailSource === "fallback").length,
+                staleItems: items.filter((item) => !isFreshCandidate(item)).length,
+                naverWeightedItems: items.filter((item) =>
+                  (item.sourceKinds || []).includes("naver")
+                ).length,
+                newestPublishedAt: newestPublishedAt(items),
+                oldestPublishedAt: oldestPublishedAt(items),
               },
             ])
           ),
@@ -1080,6 +1186,24 @@ function newestDate(a, b) {
   if (Number.isNaN(timeA)) return b || a;
   if (Number.isNaN(timeB)) return a || b;
   return timeA >= timeB ? a : b;
+}
+
+function newestPublishedAt(items) {
+  return pickPublishedAt(items, "newest");
+}
+
+function oldestPublishedAt(items) {
+  return pickPublishedAt(items, "oldest");
+}
+
+function pickPublishedAt(items, mode) {
+  const dates = items
+    .map((item) => item.publishedAt)
+    .filter((value) => !Number.isNaN(Date.parse(value || "")))
+    .sort((a, b) => Date.parse(a) - Date.parse(b));
+
+  if (dates.length === 0) return null;
+  return mode === "newest" ? dates[dates.length - 1] : dates[0];
 }
 
 function longerText(a, b) {
