@@ -23,7 +23,7 @@ async function fetchTrendingAndSave() {
         const dramaData = dramaPool.sort(() => 0.5 - Math.random()).slice(0, 3);
         const techData = techPool.sort(() => 0.5 - Math.random()).slice(0, 3);
 
-        const firebaseDbUrl = "https://chosanghee00001-default-rtdb.firebaseio.com";
+        const firebaseDbUrl = "https://chosanghee00001-default-rtdb.firebaseio.com/";
         console.log("📦 파이어베이스에 카테고리 데이터 심는 중...");
 
         // 파이어베이스에 카테고리 구조로 통째로 덮어쓰기 (조회수는 랜덤 부여)
