@@ -1,0 +1,23 @@
+name: 실시간 트렌드 자동 수집 로봇
+
+on:
+  push:
+    branches: [ "main" ]  # 코드가 수정되어 올 때도 실행
+  schedule:
+    - cron: '0 */3 * * *'  # 🌟 [핵심] 3시간마다 한 번씩 로봇을 자동으로 가동합니다.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 내 깃허브 코드 가져오기
+      uses: actions/checkout@v3
+
+    - name: 노드(Node.js) 프로그램 설치
+      uses: actions/setup-node@v3
+      with:
+        node-level: '18'
+
+    - name: 수집 로봇 작동 시작!
+      run: node bot.mjs
