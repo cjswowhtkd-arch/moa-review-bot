@@ -19,4 +19,4 @@ jobs:
         node-version: '20' # 👈 오타가 수정된 올바른 옵션 이름입니다!
 
     - name: 수집 로봇 작동 시작!
-      run: node bot.js
+      run: node bot.mjs
