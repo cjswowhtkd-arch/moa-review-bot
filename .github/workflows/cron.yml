@@ -1,26 +1,22 @@
-# [.github/workflows/cron.yml] - 깃허브가 읽고 매일 자동으로 실행할 알람 명령서입니다.
 name: OTT 및 제품 실시간 수집 봇
 
-# 1. 언제 실행할지 알람(조건)을 정합니다.
 on:
   schedule:
-    # ⭐️ 매일 한국 시간(KST) 새벽 3시마다 자동으로 실행되도록 설정 (세계 표준시 기준 18:00)
     - cron: '0 18 * * *'
-  workflow_dispatch: # 이 문장이 있으면, 매일 기다리지 않고 우리가 깃허브에서 버튼을 눌러 수동으로 즉시 실행할 수도 있습니다!
+  workflow_dispatch:
 
-# 2. 알람이 울렸을 때 가상 컴퓨터가 해야 할 일(Step)들을 적어줍니다.
 jobs:
   build:
-    runs-on: ubuntu-latest # 최신 리눅스 가상 컴퓨터를 한 대 빌립니다.
+    runs-on: ubuntu-latest
 
     steps:
     - name: 내 깃허브 코드 가져오기
-      uses: actions/checkout@v4 # 내 저장소에 있는 bot.js 파일을 가상 컴퓨터로 복사해옵니다.
+      uses: actions/checkout@v4
 
     - name: 노드(Node.js) 프로그램 설치
-      uses: actions/setup-node@v4 # 자바스크립트 코드를 실행할 수 있는 엔진을 컴퓨터에 설치합니다.
+      uses: actions/setup-node@v4
       with:
-        node-size: '20'
+        node-version: '20' # 👈 오타가 수정된 올바른 옵션 이름입니다!
 
     - name: 수집 로봇 작동 시작!
-      run: node bot.js # 가상 컴퓨터 터미널에 "node bot.js"라고 입력하여 로봇을 강제로 실행시킵니다.
+      run: node bot.js
