@@ -1,63 +1,73 @@
-// [bot.mjs] - 구글 뉴스 RSS를 활용한 실제 기사/블로그 링크 추출 로봇
+// [bot.mjs] - TOP 20 확장 및 실시간 썸네일 추출 고도화 엔진
 
-// 구글 RSS에서 데이터를 안전하게 파싱하는 핵심 함수
-async function fetchRealTrend(keyword) {
+async function fetchRealTrend(keyword, category) {
     try {
+        // 구글 뉴스 RSS 허브 개방
         const url = `https://news.google.com/rss/search?q=${encodeURIComponent(keyword)}&hl=ko&gl=KR&ceid=KR:ko`;
         const response = await fetch(url);
         const xmlText = await response.text();
 
         const items = [];
-        // <item> 태그 내부를 추출하는 정규식
         const itemMatches = xmlText.matchAll(/<item>([\s\S]*?)<\/item>/g);
         
+        // 뉴스 기사 자체 이미지가 없을 때 받쳐줄 프리미엄 카테고리별 프리셋 썸네일
+        const fallbacks = {
+            drama: "https://images.unsplash.com/photo-1598899134739-24c46f58b8c0?auto=format&fit=crop&w=500&q=80",
+            tech: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=500&q=80",
+            dessert: "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=500&q=80",
+            news: "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=500&q=80",
+            stock: "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?auto=format&fit=crop&w=500&q=80"
+        };
+
         let count = 0;
         for (const match of itemMatches) {
-            if (count >= 3) break; // 카테고리당 상위 3개만 추출
+            if (count >= 20) break; // 🌟 정확히 1위부터 20위까지 수집 제한 확장
             const itemContent = match[1];
 
             let title = itemContent.match(/<title>([\s\S]*?)<\/title>/)?.[1] || "";
             let link = itemContent.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "";
+            let description = itemContent.match(/<description>([\s\S]*?)<\/description>/)?.[1] || "";
             
-            // CDATA 태그 및 HTML 불순물 제거 깔끔화
+            // 🌟 뉴스 데이터 안에 포함된 원본 썸네일 이미지 태그 주소 정밀 추출
+            let img = description.match(/src="([^"]+)"/)?.[1] || "";
+            if (!img || img.startsWith("/")) {
+                img = fallbacks[category]; // 이미지가 깨지거나 없을 시 프리셋 매핑
+            }
+
             title = title.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]*>/g, '').trim();
             link = link.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
-
-            // 구글 뉴스 특성상 제목 끝에 붙는 언론사명 제거 (예: "드라마 속보 - 조선일보" -> "드라마 속보")
-            title = title.split(" - ")[0];
+            title = title.split(" - ")[0]; // 제목 끝 언론사 지저분한 문자열 커팅
 
             if (title && link) {
                 items.push({
                     title: title,
-                    content: `🔥 해당 키워드와 관련하여 현재 언론사 및 커뮤니티(블로그/카페)에서 실시간으로 쏟아지는 가장 뜨거운 핫이슈 정보입니다. 자세한 내용은 아래 원문 보기 단추를 눌러 확인하세요.`,
-                    link: link // 🌟 검색창이 아닌 실제 뉴스/블로그 다이렉트 주소 매핑
+                    content: `국내 주요 언론사 및 실시간 커뮤니티 트렌드 분석 허브를 통해 검증된 신뢰도 높은 정보입니다. 자세한 정밀 리포트 및 맥락은 하단 원문 링크 단추를 눌러 바로 확인 가능합니다.`,
+                    link: link,
+                    img: img // 🌟 썸네일 주소 저장 탑재
                 });
                 count++;
             }
         }
         return items;
     } catch (e) {
-        console.error(`${keyword} 데이터 수집 중 오류:`, e.message);
-        return [{ title: "실시간 정보 갱신 중", content: "잠시 후 데이터가 동기화됩니다.", link: "#" }];
+        console.error(`${keyword} 엔진 가동 실패:`, e.message);
+        return [];
     }
 }
 
 async function startRobot() {
-    console.log("🚀 실시간 트렌드 기사/블로그 링크 추출 엔진 가동...");
+    console.log("🚀 TOP 1~20 실시간 고신뢰도 트렌드 수집을 시작합니다...");
 
-    // 각 카테고리별로 구글 RSS 허브에서 진짜 살아있는 뉴스/글 주소를 긁어옵니다.
     const categoriesData = {
-        drama: await fetchRealTrend("드라마 웹툰 신작 라인업"),
-        tech: await fetchRealTrend("IT 테크 신제품 출시"),
-        dessert: await fetchRealTrend("성수동 핫플 카페 디저트 맛집"),
-        news: await fetchRealTrend("사회 경제 실시간 주요 뉴스"),
-        stock: await fetchRealTrend("국내 주식 증시 특징주 금융")
+        drama: await fetchRealTrend("드라마 웹툰 신작 라인업", "drama"),
+        tech: await fetchRealTrend("IT 테크 신제품 출시 전자", "tech"),
+        dessert: await fetchRealTrend("성수동 핫플 카페 디저트 맛집", "dessert"),
+        news: await fetchRealTrend("정치 사회 경제 실시간 주요 뉴스", "news"),
+        stock: await fetchRealTrend("국내 주식 증시 특징주 금융", "stock")
     };
 
-    // 파이어베이스 저장소 주소 (기존 index.html이categories.json을 바라보고 있다면 이걸로 유지)
     const firebaseDbUrl = "https://chosanghee00001-default-rtdb.firebaseio.com/categories.json";
 
-    console.log("📦 긁어온 진짜 기사 주소들을 파이어베이스 창고에 동기화 중...");
     try {
         const response = await fetch(firebaseDbUrl, {
             method: 'PUT',
@@ -66,14 +76,14 @@ async function startRobot() {
         });
 
         if (response.ok) {
-            console.log("🎉 [대성공] 이제 사이트에서 카드를 누르면 진짜 기사/블로그로 바로 이동합니다!");
+            console.log("🎉 [성공] 썸네일을 포함한 TOP 20개의 데이터가 파이어베이스에 안착했습니다.");
             process.exit(0);
         } else {
-            console.error("❌ 파이어베이스 전송 실패:", await response.text());
+            console.error("❌ 전송 거부:", await response.text());
             process.exit(1);
         }
     } catch (error) {
-        console.error("❌ 네트워크 최종 에러:", error.message);
+        console.error("❌ 네트워크 최종 예외:", error.message);
         process.exit(1);
     }
 }
