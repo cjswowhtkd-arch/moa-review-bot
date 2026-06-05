@@ -77,7 +77,7 @@ async function fetchRealTrendingNews() {
         });
 
         // 파이어베이스 창고 주소 설정
-        let firebaseDbUrl = "https://chosanghee00001-default-rtdb.firebaseio.com";
+        let firebaseDbUrl = "https://chosanghee00001-default-rtdb.firebaseio.com/";
         if (!firebaseDbUrl.endsWith("/")) firebaseDbUrl += "/";
 
         console.log("📦 긁어온 리얼 데이터를 파이어베이스 창고에 실시간 동기화 중...");
