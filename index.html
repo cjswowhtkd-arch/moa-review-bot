@@ -467,7 +467,15 @@
             const rank = item.rank || index + 1;
             const card = document.createElement("article");
             card.className = "trend-card";
-            card.addEventListener("click", () => openModal(item, rank));
+            card.setAttribute("role", "link");
+            card.tabIndex = 0;
+            card.addEventListener("click", () => openArticle(item));
+            card.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openArticle(item);
+                }
+            });
 
             const copy = document.createElement("div");
             copy.className = "card-copy";
@@ -564,6 +572,11 @@
                 hour: "2-digit",
                 minute: "2-digit"
             }).format(date);
+        }
+
+        function openArticle(item) {
+            const target = safeUrl(item.link);
+            if (target) window.location.href = target;
         }
 
         function openModal(item, rank) {
