@@ -536,7 +536,8 @@
                 const cafeName = item.cafeName || item.source || "네이버 카페";
                 const read = formatCount(item.readCount);
                 const comments = formatCount(item.commentCount || 0);
-                return `${cafeName} · 조회 ${read} · 댓글 ${comments}`;
+                const likes = formatCount(item.likeCount || 0);
+                return `조회 ${read} · 좋아요 ${likes} · 댓글 ${comments} · ${cafeName}`;
             }
 
             const count = Number(item.sourceCount || item.sources?.length || 0);
