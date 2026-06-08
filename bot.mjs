@@ -18,6 +18,7 @@ const DRY_RUN = process.env.DRY_RUN === "1";
 
 const NAVER_CAFE_API_BASE =
   "https://apis.naver.com/cafe-home-web/cafe-home/v1/popular";
+const NAVER_CAFE_ARTICLE_API_BASE = "https://article.cafe.naver.com/gw/v4/cafes";
 
 const USER_AGENT =
   process.env.TREND_USER_AGENT ||
@@ -42,6 +43,7 @@ const CAFE_RANGES = [
 
 const FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=900&q=80";
+const articleImageCache = new Map();
 
 async function fetchCafeTrend(range) {
   console.log(`\n[${range.label}] 네이버 카페 ${range.endpoint} 조회수 기반 수집`);
@@ -55,18 +57,18 @@ async function fetchCafeTrend(range) {
   const freshArticles = range.maxAgeHours
     ? articles.filter((item) => isWithinHours(item.publishedAt, range.maxAgeHours))
     : articles;
-  const freshWithImages = freshArticles.filter((item) => item.img);
-  const allWithImages = articles.filter((item) => item.img);
   const candidates =
-    freshWithImages.length >= MAX_ITEMS
-      ? freshWithImages
-      : allWithImages.length >= MAX_ITEMS
-        ? allWithImages
-        : freshArticles.length >= MAX_ITEMS
-          ? freshArticles
-          : articles;
+    freshArticles.length >= MAX_ITEMS
+      ? freshArticles
+      : articles;
 
-  const topItems = candidates
+  const enrichedItems = await mapLimit(
+    candidates.sort(compareCafeArticles).slice(0, MAX_ITEMS),
+    4,
+    enrichWithArticleFirstImage
+  );
+
+  const topItems = enrichedItems
     .sort(compareCafeArticles)
     .slice(0, MAX_ITEMS)
     .map((item, index) => ({
@@ -76,7 +78,7 @@ async function fetchCafeTrend(range) {
         item.readCount
       )} · 댓글 ${formatCountKo(item.commentCount)} · 좋아요 ${formatCountKo(item.likeCount)}`,
       link: item.link,
-      img: item.img || FALLBACK_IMAGE,
+      img: item.firstImage || item.img || FALLBACK_IMAGE,
       source: item.cafeName || "네이버 카페",
       sources: uniqueCompact(["네이버 카페", item.cafeName]),
       sourceCount: 1,
@@ -88,12 +90,54 @@ async function fetchCafeTrend(range) {
       cafeName: item.cafeName,
       cafeId: item.cafeId,
       articleId: item.articleId,
+      thumbnailBasis: item.firstImage ? "본문 첫 번째 이미지" : "카페 대표 이미지",
     }));
 
   console.log(
-    `  - 후보 ${articles.length}개, 실제이미지 ${allWithImages.length}개, 최신필터 ${freshArticles.length}개, 최종 ${topItems.length}/${MAX_ITEMS}개`
+    `  - 후보 ${articles.length}개, 본문첫이미지 ${enrichedItems.filter((item) => item.firstImage).length}개, 최신필터 ${freshArticles.length}개, 최종 ${topItems.length}/${MAX_ITEMS}개`
   );
   return topItems;
+}
+
+async function enrichWithArticleFirstImage(item) {
+  const firstImage = await fetchArticleFirstImage(item).catch((error) => {
+    console.warn(`  - 첫 이미지 추출 실패: ${item.title} (${error.message})`);
+    return "";
+  });
+
+  return {
+    ...item,
+    firstImage,
+  };
+}
+
+async function fetchArticleFirstImage(item) {
+  if (!item.cafeId || !item.articleId) return "";
+
+  const cacheKey = `${item.cafeId}:${item.articleId}`;
+  if (articleImageCache.has(cacheKey)) return articleImageCache.get(cacheKey);
+
+  const url = new URL(
+    `${NAVER_CAFE_ARTICLE_API_BASE}/${encodeURIComponent(item.cafeId)}/articles/${encodeURIComponent(
+      item.articleId
+    )}`
+  );
+  url.searchParams.set("useCafeId", "true");
+  url.searchParams.set("fromPopular", "true");
+  if (item.art) {
+    url.searchParams.set("art", item.art);
+  }
+
+  const response = await fetchJson(url.toString(), {
+    referer: item.link,
+    origin: "https://m.cafe.naver.com",
+    product: "mweb",
+  });
+  const contentHtml = response?.result?.article?.contentHtml || "";
+  const firstImage = extractFirstImageFromHtml(contentHtml);
+
+  articleImageCache.set(cacheKey, firstImage);
+  return firstImage;
 }
 
 async function fetchNaverCafePopular(endpoint) {
@@ -121,6 +165,7 @@ function normalizeCafeArticle(item) {
     cafeName: cleanCafeName(item.cafeName || "네이버 카페"),
     cafeId: item.cafeId,
     articleId: item.articleId,
+    art: item.art || "",
     publishedAt: item.writeDateTimestamp
       ? new Date(Number(item.writeDateTimestamp)).toISOString()
       : new Date().toISOString(),
@@ -189,18 +234,21 @@ async function startRobot() {
   }
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+  const referer = options.referer || "https://section.cafe.naver.com/ca-fe/home/cafe-hots";
+  const origin = options.origin || "https://section.cafe.naver.com";
+  const product = options.product || "pc";
 
   try {
     const response = await fetch(url, {
       headers: {
         "User-Agent": USER_AGENT,
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.6,en;q=0.5",
-        Referer: "https://section.cafe.naver.com/ca-fe/home/cafe-hots",
-        Origin: "https://section.cafe.naver.com",
-        "X-Cafe-Product": "pc",
+        Referer: referer,
+        Origin: origin,
+        "X-Cafe-Product": product,
       },
       signal: controller.signal,
     });
@@ -237,6 +285,40 @@ function isWithinHours(isoDate, hours) {
 function normalizeCafeImage(value) {
   if (!value) return "";
   return String(value).replace(/&amp;/g, "&");
+}
+
+function extractFirstImageFromHtml(html) {
+  const imageMatches = String(html || "").matchAll(/<img\b[^>]*>/gi);
+
+  for (const match of imageMatches) {
+    const tag = match[0];
+    const rawUrl =
+      tag.match(/\bdata-src=["']([^"']+)["']/i)?.[1] ||
+      tag.match(/\bsrc=["']([^"']+)["']/i)?.[1] ||
+      tag.match(/\bdata-original=["']([^"']+)["']/i)?.[1] ||
+      "";
+    const imageUrl = normalizeCafeImage(decodeEntities(rawUrl));
+
+    if (isUsableArticleImage(imageUrl)) {
+      return imageUrl;
+    }
+  }
+
+  return "";
+}
+
+function isUsableArticleImage(value) {
+  if (!isHttpUrl(value)) return false;
+
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    if (!hostname.includes("pstatic.net") && !hostname.includes("naver.net")) return false;
+    if (/profile|emoticon|icon|sprite|blank|default/i.test(url.pathname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function stripHtml(value) {
@@ -356,6 +438,22 @@ function formatCountKo(value) {
 
 function uniqueCompact(values) {
   return [...new Set(values.filter(Boolean).map((value) => String(value).trim()).filter(Boolean))];
+}
+
+async function mapLimit(items, limit, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
 }
 
 function toNumber(value) {
