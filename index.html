@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>모아리뷰 카페 인기글</title>
+    <title>실시간 모아리뷰</title>
     <style>
         :root {
             --bg: #050608;
@@ -132,6 +132,46 @@
             display: none;
         }
 
+        .main-tab-wrapper {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            margin: 0 0 12px;
+        }
+
+        .main-tab-btn {
+            min-height: 46px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            background: rgba(14, 16, 20, 0.72);
+            color: rgba(255, 255, 255, 0.68);
+            padding: 0 8px;
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: 0;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .main-tab-btn.active {
+            color: #fff;
+            border-color: rgba(255, 61, 104, 0.7);
+            background:
+                linear-gradient(135deg, rgba(255, 61, 104, 0.34), rgba(54, 215, 255, 0.12)),
+                rgba(255, 255, 255, 0.12);
+            box-shadow:
+                inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+                0 12px 24px rgba(255, 61, 104, 0.12);
+        }
+
+        .filter-tabs {
+            padding-bottom: 18px;
+        }
+
+        .filter-tabs.hidden {
+            display: none;
+        }
+
         .tab-btn {
             flex: 0 0 auto;
             min-height: 40px;
@@ -257,86 +297,6 @@
             padding: 38px 0;
         }
 
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            z-index: 2000;
-            background: rgba(0, 0, 0, 0.82);
-            align-items: flex-end;
-        }
-
-        .modal-window {
-            width: min(100%, 520px);
-            margin: 0 auto;
-            background: var(--panel);
-            border-radius: 24px 24px 0 0;
-            overflow: hidden;
-            border: 1px solid var(--line);
-        }
-
-        .modal-thumb {
-            width: 100%;
-            aspect-ratio: 16 / 9;
-            object-fit: cover;
-            display: block;
-            background: #222631;
-        }
-
-        .modal-info {
-            padding: 20px;
-        }
-
-        .modal-meta {
-            color: var(--muted);
-            font-size: 13px;
-            font-weight: 800;
-            margin-bottom: 10px;
-        }
-
-        .modal-info h2 {
-            margin: 0 0 12px;
-            font-size: 22px;
-            line-height: 1.35;
-        }
-
-        .modal-info p {
-            margin: 0 0 20px;
-            color: var(--muted);
-            font-size: 14px;
-            line-height: 1.6;
-            font-weight: 700;
-        }
-
-        .action-link {
-            display: block;
-            text-align: center;
-            background: #fff;
-            color: #050608;
-            padding: 14px;
-            text-decoration: none;
-            border-radius: 12px;
-            font-size: 14px;
-            font-weight: 900;
-        }
-
-        .close-icon {
-            position: absolute;
-            top: 14px;
-            right: 14px;
-            width: 38px;
-            height: 38px;
-            border-radius: 50%;
-            background: rgba(0, 0, 0, 0.6);
-            color: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 26px;
-            z-index: 2;
-            cursor: pointer;
-        }
-
         @media (min-width: 700px) {
             body {
                 background-color: #111318;
@@ -371,6 +331,12 @@
             .card-desc {
                 font-size: 12px;
             }
+
+            .main-tab-btn {
+                min-height: 42px;
+                font-size: 11px;
+                padding: 0 6px;
+            }
         }
     </style>
 </head>
@@ -382,19 +348,25 @@
         </header>
 
         <section class="hero">
-            <h1 class="hero-title">카페<br>인기글</h1>
+            <h1 class="hero-title">실시간<br>모아리뷰</h1>
             <div class="hero-line"></div>
-            <p class="hero-sub">NAVER CAFE HOT</p>
+            <p class="hero-sub">REALTIME TRENDS</p>
         </section>
 
-        <nav class="tab-wrapper" aria-label="카테고리">
-            <button id="tab-daily" class="tab-btn active" data-category="daily">실시간HOT</button>
-            <button id="tab-weekly" class="tab-btn" data-category="weekly">주간TOP</button>
+        <nav class="main-tab-wrapper" aria-label="메인 카테고리">
+            <button class="main-tab-btn active" data-section="naverCafe">네이버 카페</button>
+            <button class="main-tab-btn" data-section="community">커뮤니티 인기</button>
+            <button class="main-tab-btn" data-section="hotDeal">쇼핑 핫딜</button>
+        </nav>
+
+        <nav id="feedFilterTabs" class="tab-wrapper filter-tabs" aria-label="세부 필터">
+            <button id="tab-daily" class="tab-btn active" data-feed="daily">실시간HOT</button>
+            <button id="tab-weekly" class="tab-btn" data-feed="weekly">주간TOP</button>
         </nav>
 
         <div class="summary-row">
             <span id="activeSummary">실시간HOT TOP 10</span>
-            <span>카페 조회수 기반</span>
+            <span id="activeSource">네이버 카페 공식 랭킹</span>
         </div>
 
         <section class="grid-container" id="cardGrid">
@@ -402,36 +374,67 @@
         </section>
     </main>
 
-    <div id="detailModal" class="modal-overlay">
-        <div class="modal-window">
-            <span class="close-icon" id="closeModalBtn">&times;</span>
-            <img id="modalImg" class="modal-thumb" src="" alt="카페 게시글 이미지" referrerpolicy="no-referrer">
-            <div class="modal-info">
-                <div id="modalMeta" class="modal-meta"></div>
-                <h2 id="modalTitle"></h2>
-                <p id="modalContent"></p>
-                <a id="modalGoBtn" href="#" target="_blank" rel="noopener noreferrer" class="action-link">카페에서 보기</a>
-            </div>
-        </div>
-    </div>
-
     <script type="module">
         const dbEndpoint = "https://chosanghee00001-default-rtdb.firebaseio.com/categories.json";
         const maxItems = 10;
         const syncIntervalMs = 60 * 60 * 1000;
-        const defaultFallback = "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=900&q=80";
         const fallbackImages = {
-            daily: defaultFallback,
-            weekly: defaultFallback,
+            naverCafe: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=900&q=80",
+            community: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80",
+            hotDeal: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=900&q=80"
         };
 
-        let activeTab = "daily";
+        const sections = {
+            naverCafe: {
+                label: "네이버 카페",
+                source: "네이버 카페 공식 랭킹",
+                empty: "네이버 카페 인기글 데이터가 비어있습니다.",
+                feeds: [
+                    { key: "daily", label: "실시간HOT", dataKeys: ["daily"], source: "네이버 카페 실시간HOT" },
+                    { key: "weekly", label: "주간TOP", dataKeys: ["weekly"], source: "네이버 카페 주간TOP" }
+                ]
+            },
+            community: {
+                label: "커뮤니티 인기",
+                source: "커뮤니티 통합 인기글",
+                empty: "커뮤니티 인기 데이터 연결 준비 중입니다.",
+                feeds: [
+                    {
+                        key: "communityPopular",
+                        label: "커뮤니티 인기",
+                        dataKeys: ["communityPopular", "community", "communities"],
+                        source: "디시·에펨 등 통합 인기글"
+                    }
+                ]
+            },
+            hotDeal: {
+                label: "쇼핑 핫딜",
+                source: "실시간 핫딜/할인 정보",
+                empty: "쇼핑 핫딜 데이터 연결 준비 중입니다.",
+                feeds: [
+                    {
+                        key: "hotDeals",
+                        label: "쇼핑 핫딜",
+                        dataKeys: ["hotDeals", "shoppingHotDeals", "shopping", "deals"],
+                        source: "뽐뿌·어미새·루리웹 핫딜"
+                    }
+                ]
+            }
+        };
+
+        let activeSection = "naverCafe";
+        let activeFeedBySection = {
+            naverCafe: "daily",
+            community: "communityPopular",
+            hotDeal: "hotDeals"
+        };
         let rawDataStore = {};
 
         const grid = document.getElementById("cardGrid");
         const syncStatus = document.getElementById("syncStatus");
         const activeSummary = document.getElementById("activeSummary");
-        const modal = document.getElementById("detailModal");
+        const activeSource = document.getElementById("activeSource");
+        const feedFilterTabs = document.getElementById("feedFilterTabs");
 
         async function fetchSystem() {
             try {
@@ -441,6 +444,7 @@
 
                 rawDataStore = await res.json() || {};
                 syncStatus.textContent = `${formatTime(new Date())} 갱신`;
+                renderFeedTabs();
                 paintCards();
             } catch (err) {
                 syncStatus.textContent = "동기화 대기";
@@ -448,32 +452,57 @@
             }
         }
 
+        function renderFeedTabs() {
+            const section = getActiveSection();
+            const feeds = section.feeds || [];
+            feedFilterTabs.innerHTML = "";
+            feedFilterTabs.classList.toggle("hidden", feeds.length <= 1);
+
+            feeds.forEach((feed) => {
+                const button = document.createElement("button");
+                button.className = "tab-btn";
+                button.dataset.feed = feed.key;
+                button.textContent = feed.label;
+                if (getActiveFeed().key === feed.key) button.classList.add("active");
+                button.addEventListener("click", () => {
+                    activeFeedBySection[activeSection] = feed.key;
+                    renderFeedTabs();
+                    paintCards();
+                });
+                feedFilterTabs.appendChild(button);
+            });
+        }
+
         function paintCards() {
             grid.innerHTML = "";
-            const activeList = normalizeList(rawDataStore[activeTab]).slice(0, maxItems);
-            activeSummary.textContent = `${categoryLabel(activeTab)} ${activeList.length}/${maxItems}`;
+            const section = getActiveSection();
+            const feed = getActiveFeed();
+            const activeList = findDataList(feed.dataKeys).slice(0, maxItems);
+
+            activeSummary.textContent = `${feed.label} ${activeList.length}/${maxItems}`;
+            activeSource.textContent = feed.source || section.source;
 
             if (activeList.length === 0) {
-                showEmpty("현재 데이터가 비어있습니다. 수집기를 가동해 주세요.");
+                showEmpty(section.empty);
                 return;
             }
 
             activeList.forEach((item, index) => {
-                grid.appendChild(createCard(item, index));
+                grid.appendChild(createCard(item, index, activeSection));
             });
         }
 
-        function createCard(item, index) {
-            const rank = item.rank || index + 1;
+        function createCard(item, index, sectionKey) {
+            const view = toCardView(item, index, sectionKey);
             const card = document.createElement("article");
             card.className = "trend-card";
             card.setAttribute("role", "link");
             card.tabIndex = 0;
-            card.addEventListener("click", () => openArticle(item));
+            card.addEventListener("click", () => openArticle(view.link));
             card.addEventListener("keydown", (event) => {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    openArticle(item);
+                    openArticle(view.link);
                 }
             });
 
@@ -483,18 +512,18 @@
             const rankRow = document.createElement("div");
             rankRow.className = "rank-row";
             const rankText = document.createElement("span");
-            rankText.textContent = String(rank).padStart(2, "0");
+            rankText.textContent = String(view.rank).padStart(2, "0");
             const rankDot = document.createElement("span");
             rankDot.className = "rank-dot";
             rankRow.append(rankText, rankDot);
 
             const title = document.createElement("h2");
             title.className = "card-title";
-            title.textContent = item.title || "제목 없음";
+            title.textContent = view.title;
 
             const desc = document.createElement("p");
             desc.className = "card-desc";
-            desc.textContent = sourceLabel(item);
+            desc.textContent = view.meta;
 
             copy.append(rankRow, title, desc);
 
@@ -503,12 +532,12 @@
 
             const img = document.createElement("img");
             img.referrerPolicy = "no-referrer";
-            img.src = safeUrl(item.img) || fallbackImages[activeTab] || defaultFallback;
-            img.alt = item.title || "카페 게시글 이미지";
+            img.src = safeUrl(view.img) || fallbackImages[sectionKey] || fallbackImages.naverCafe;
+            img.alt = view.title;
             img.loading = "lazy";
             img.onerror = () => {
                 img.onerror = null;
-                img.src = fallbackImages[activeTab] || defaultFallback;
+                img.src = fallbackImages[sectionKey] || fallbackImages.naverCafe;
             };
 
             thumbBox.appendChild(img);
@@ -516,11 +545,74 @@
             return card;
         }
 
+        function toCardView(item, index, sectionKey) {
+            const source = getItemSource(item, sectionKey);
+            const price = firstText(item.price, item.salePrice, item.discountPrice);
+            const mall = firstText(item.mallName, item.shopName, item.storeName);
+            const baseTitle = firstText(item.title, item.subject, item.name, "제목 없음");
+            const title =
+                sectionKey === "hotDeal" && (mall || price)
+                    ? `[${[mall, price].filter(Boolean).join(" / ")}] ${baseTitle}`
+                    : baseTitle;
+            const viewCount = firstNumber(item.readCount, item.viewCount, item.views);
+            const recommendCount = firstNumber(
+                item.recommendCount,
+                item.recommend,
+                item.upCount,
+                item.likeCount,
+                item.likes
+            );
+            const commentCount = firstNumber(item.commentCount, item.comments, item.replyCount);
+
+            return {
+                rank: firstNumber(item.rank, item.naverRank) || index + 1,
+                title,
+                link: firstText(item.link, item.url, item.articleUrl, item.productUrl),
+                img: firstText(item.img, item.thumbnail, item.thumbnailUrl, item.image, item.imageUrl, item.productImage),
+                meta: buildMeta(sectionKey, { source, viewCount, recommendCount, commentCount })
+            };
+        }
+
+        function buildMeta(sectionKey, values) {
+            const parts = [];
+            if (values.viewCount > 0) parts.push(`조회 ${formatCount(values.viewCount)}`);
+
+            if (sectionKey === "naverCafe") {
+                if (values.recommendCount > 0) parts.push(`좋아요 ${formatCount(values.recommendCount)}`);
+            } else {
+                if (values.recommendCount > 0) parts.push(`추천 ${formatCount(values.recommendCount)}`);
+            }
+
+            if (values.commentCount > 0) parts.push(`댓글 ${formatCount(values.commentCount)}`);
+            if (values.source) parts.push(values.source);
+            return parts.join(" · ");
+        }
+
+        function getItemSource(item, sectionKey) {
+            if (sectionKey === "naverCafe") {
+                return firstText(item.cafeName, item.source, sections[sectionKey].label);
+            }
+
+            if (sectionKey === "hotDeal") {
+                return firstText(item.source, item.siteName, item.boardName, sections[sectionKey].label);
+            }
+
+            return firstText(item.communityName, item.source, item.siteName, item.boardName, sections[sectionKey].label);
+        }
+
+        function findDataList(keys) {
+            for (const key of keys || []) {
+                const list = normalizeList(rawDataStore[key]);
+                if (list.length > 0) return list;
+            }
+            return [];
+        }
+
         function normalizeList(value) {
             const list = Array.isArray(value) ? value : Object.values(value || {});
             return list
                 .filter(Boolean)
-                .sort((a, b) => Number(a.rank || 999) - Number(b.rank || 999));
+                .sort((a, b) => firstNumber(a.rank, a.naverRank, 999) - firstNumber(b.rank, b.naverRank, 999));
         }
 
         function showEmpty(message) {
@@ -531,26 +623,35 @@
             grid.appendChild(empty);
         }
 
-        function sourceLabel(item) {
-            if (Number(item.readCount || 0) > 0) {
-                const cafeName = item.cafeName || item.source || "네이버 카페";
-                const read = formatCount(item.readCount);
-                const comments = formatCount(item.commentCount || 0);
-                const likes = formatCount(item.likeCount || 0);
-                return `조회 ${read} · 좋아요 ${likes} · 댓글 ${comments} · ${cafeName}`;
-            }
-
-            const count = Number(item.sourceCount || item.sources?.length || 0);
-            const source = item.source || item.sources?.[0] || "검증 소스";
-            return count > 1 ? `${source} 외 ${count - 1}` : source;
+        function getActiveSection() {
+            return sections[activeSection] || sections.naverCafe;
         }
 
-        function categoryLabel(key) {
-            const labels = {
-                daily: "실시간HOT",
-                weekly: "주간TOP"
-            };
-            return labels[key] || "트렌드";
+        function getActiveFeed() {
+            const section = getActiveSection();
+            const feedKey = activeFeedBySection[activeSection];
+            return section.feeds.find((feed) => feed.key === feedKey) || section.feeds[0];
+        }
+
+        function setActiveSection(sectionKey) {
+            activeSection = sectionKey;
+            document.querySelectorAll(".main-tab-btn").forEach((button) => {
+                button.classList.toggle("active", button.dataset.section === sectionKey);
+            });
+            renderFeedTabs();
+            paintCards();
+        }
+
+        function firstText(...values) {
+            return values.find((value) => String(value || "").trim()) || "";
+        }
+
+        function firstNumber(...values) {
+            for (const value of values) {
+                const number = Number(value);
+                if (Number.isFinite(number) && number > 0) return number;
+            }
+            return 0;
         }
 
         function formatCount(value) {
@@ -575,42 +676,16 @@
             }).format(date);
         }
 
-        function openArticle(item) {
-            const target = safeUrl(item.link);
+        function openArticle(link) {
+            const target = safeUrl(link);
             if (target) window.location.href = target;
         }
 
-        function openModal(item, rank) {
-            document.getElementById("modalImg").src = safeUrl(item.img) || fallbackImages[activeTab] || defaultFallback;
-            document.getElementById("modalTitle").textContent = item.title || "제목 없음";
-            document.getElementById("modalContent").textContent = item.content || "원문 링크에서 상세 내용을 확인할 수 있습니다.";
-            document.getElementById("modalMeta").textContent = `TOP ${rank} · ${sourceLabel(item)}`;
-            document.getElementById("modalGoBtn").href = safeUrl(item.link) || "#";
-            modal.style.display = "flex";
-        }
-
-        function closeModal() {
-            modal.style.display = "none";
-        }
-
-        document.querySelectorAll(".tab-btn").forEach((button) => {
-            button.addEventListener("click", () => {
-                activeTab = button.dataset.category;
-                document.querySelectorAll(".tab-btn").forEach((tab) => tab.classList.remove("active"));
-                button.classList.add("active");
-                paintCards();
-            });
+        document.querySelectorAll(".main-tab-btn").forEach((button) => {
+            button.addEventListener("click", () => setActiveSection(button.dataset.section));
         });
 
-        modal.addEventListener("click", (event) => {
-            if (event.target === modal) closeModal();
-        });
-
-        document.getElementById("closeModalBtn").addEventListener("click", closeModal);
-        document.addEventListener("keydown", (event) => {
-            if (event.key === "Escape") closeModal();
-        });
-
+        renderFeedTabs();
         fetchSystem();
         setInterval(fetchSystem, syncIntervalMs);
     </script>
