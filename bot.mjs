@@ -62,38 +62,13 @@ const COMMUNITY_SOURCES = [
   },
 ];
 
-const HOTDEAL_SOURCES = [
-  {
-    key: "ppomppuHot",
-    label: "뽐뿌 핫게시글",
-    siteName: "뽐뿌",
-    url: "https://www.ppomppu.co.kr/hot.php?id=ppomppu",
-    encoding: "euc-kr",
-    parser: parsePpomppuHot,
-  },
-  {
-    key: "ruliwebHotdeal",
-    label: "루리웹 유저 핫딜 BEST",
-    siteName: "루리웹",
-    url: "https://bbs.ruliweb.com/market/board/1020",
-    parser: parseRuliwebHotdeal,
-  },
-  {
-    key: "eomisaePopular",
-    label: "어미새 인기정보",
-    siteName: "어미새",
-    url: "https://eomisae.co.kr/fs",
-    parser: parseEomisaePopular,
-  },
-];
-
 const FALLBACK_IMAGES = {
   naverCafe:
     "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=900&q=80",
   community:
     "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80",
-  hotDeal:
-    "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=900&q=80",
+  mediaTrend:
+    "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?auto=format&fit=crop&w=900&q=80",
 };
 
 const articleImageCache = new Map();
@@ -114,13 +89,7 @@ async function startRobot() {
     fallbackImage: FALLBACK_IMAGES.community,
   });
 
-  categoriesData.hotDeals = await fetchAggregateTrend({
-    key: "hotDeals",
-    label: "쇼핑 핫딜",
-    type: "hotDeal",
-    sources: HOTDEAL_SOURCES,
-    fallbackImage: FALLBACK_IMAGES.hotDeal,
-  });
+  categoriesData.mediaTrends = await fetchMediaTrends();
 
   categoriesData.updatedAt = new Date().toISOString();
 
@@ -265,6 +234,11 @@ async function fetchAggregateTrend({ key, label, type, sources, fallbackImage })
   );
 
   return topItems;
+}
+
+async function fetchMediaTrends() {
+  console.log("\n[미디어 트렌드] 유튜브/OTT 트렌드 소스 연결 준비 중");
+  return [];
 }
 
 async function enrichNaverCafeArticle(item) {
@@ -414,93 +388,6 @@ function parseFmkoreaBest(html, source) {
   });
 }
 
-function parsePpomppuHot(html, source) {
-  const rows = [...html.matchAll(/<tr\b[^>]*class=["'][^"']*baseList[^"']*["'][\s\S]*?<\/tr>/gi)]
-    .map((match) => match[0])
-    .filter((row) => /data-bbs_no=["']\d+["']/i.test(row));
-
-  return rows.map((row, index) => {
-    const anchors = [...row.matchAll(/<a\b[^>]*class=["'][^"']*baseList-title[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
-    const titleAnchor = anchors[anchors.length - 1] || anchors[0];
-    const parsedTitle = parseDealTitle(stripHtml(titleAnchor?.[2] || ""));
-    const boardDates = [...row.matchAll(/<td\b[^>]*class=["'][^"']*board_date[^"']*["'][^>]*>([\s\S]*?)<\/td>/gi)].map((match) =>
-      stripHtml(match[1])
-    );
-    const voteText = boardDates[1] || "";
-
-    return {
-      sourceRank: index + 1,
-      title: parsedTitle.title,
-      mallName: parsedTitle.mallName,
-      price: parsedTitle.price,
-      link: absolutizeUrl(titleAnchor?.[1] || "", source.url),
-      img: extractImageFromTag(row, source.url),
-      viewCount: parseCount(boardDates[2]),
-      recommendCount: parseCount(voteText.split("-")[0]),
-      commentCount: parseCount(row.match(/<span\b[^>]*class=["'][^"']*list_comment2[^"']*["'][^>]*>([\d,]+)/i)?.[1]),
-      publishedAt: parseKoreanDate(boardDates[0]),
-      rankingBasis: `${source.label} 공식 목록`,
-    };
-  });
-}
-
-function parseRuliwebHotdeal(html, source) {
-  const rows = [...html.matchAll(/<tr\b[^>]*class=["'][^"']*table_body[^"']*["'][\s\S]*?<\/tr>/gi)]
-    .map((match) => match[0])
-    .filter((row) => /best|blocktarget/i.test(row) && !/notice/i.test(row));
-
-  return rows.map((row, index) => {
-    const subjectCell = row.match(/<td\b[^>]*class=["'][^"']*subject[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)?.[1] || "";
-    const titleAnchor = subjectCell.match(/<a\b[^>]*class=["'][^"']*subject_link[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
-    const rawTitle = stripHtml(subjectCell.match(/<strong>([\s\S]*?)<\/strong>/i)?.[1] || titleAnchor?.[2] || "");
-    const parsedTitle = parseDealTitle(rawTitle);
-
-    return {
-      sourceRank: index + 1,
-      title: parsedTitle.title,
-      mallName: parsedTitle.mallName,
-      price: parsedTitle.price,
-      link: absolutizeUrl(titleAnchor?.[1] || "", source.url),
-      img: "",
-      preferDetailImage: true,
-      viewCount: parseCount(extractCellText(row, "hit")),
-      recommendCount: parseCount(extractCellText(row, "recomd")),
-      commentCount: parseCount(subjectCell.match(/<a\b[^>]*class=["'][^"']*num_reply[^"']*["'][^>]*>\s*\(?([\d,]+)/i)?.[1]),
-      publishedAt: parseKoreanDate(extractCellText(row, "time")),
-      rankingBasis: `${source.label} 공식 목록`,
-    };
-  });
-}
-
-function parseEomisaePopular(html, source) {
-  const rows = [...html.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi)]
-    .map((match) => match[0])
-    .filter((row) => /is_popular/i.test(row) && /class=["']title/i.test(row) && !/adlink_|&nbsp;AD&nbsp;|>AD</i.test(row));
-
-  return rows.map((row, index) => {
-    const titleCell = row.match(/<td\b[^>]*class=["']title["'][^>]*>[\s\S]*?<\/td>/i)?.[0] || row;
-    const titleAnchor = titleCell.match(/<a\b[^>]*class=["'][^"']*pjax[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
-    const category = stripHtml(titleCell.match(/<span\b[^>]*class=["'][^"']*cate[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || "");
-    const parsedTitle = parseDealTitle(stripHtml(titleAnchor?.[2] || ""));
-    const cells = [...row.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((match) => stripHtml(match[1]));
-
-    return {
-      sourceRank: index + 1,
-      title: parsedTitle.title,
-      mallName: parsedTitle.mallName || category,
-      price: parsedTitle.price,
-      link: absolutizeUrl(titleAnchor?.[1] || "", source.url),
-      img: "",
-      preferDetailImage: true,
-      viewCount: 0,
-      recommendCount: parseCount(cells[cells.length - 1]),
-      commentCount: parseCount(titleCell.match(/<a\b[^>]*class=["'][^"']*tt_cm[^"']*["'][^>]*>[\s\S]*?([\d,]+)[\s\S]*?<\/a>/i)?.[1]),
-      publishedAt: parseKoreanDate(cells[cells.length - 2]),
-      rankingBasis: `${source.label} 공식 목록`,
-    };
-  });
-}
-
 function normalizeCafeArticle(item) {
   return {
     title: stripHtml(item.subject),
@@ -553,11 +440,12 @@ function toPublicTrendItem(item, index, type, fallbackImage) {
 
   return {
     ...base,
-    mallName: item.mallName || "",
-    shopName: item.mallName || "",
-    price: item.price || "",
-    productImage: base.img,
-    productUrl: item.link,
+    platformName: item.platformName || item.source || item.siteName || "",
+    channelName: item.channelName || "",
+    viewTime: item.viewTime || item.publishedLabel || "",
+    videoThumbnail: base.img,
+    contentThumbnail: base.img,
+    watchUrl: item.link,
   };
 }
 
@@ -566,7 +454,7 @@ function buildContentSummary(item, type) {
   if (item.siteName || item.source) parts.push(item.siteName || item.source);
   if (item.boardName) parts.push(item.boardName);
   if (item.viewCount > 0) parts.push(`조회 ${formatCountKo(item.viewCount)}`);
-  if (item.recommendCount > 0) parts.push(`${type === "hotDeal" ? "추천" : "추천"} ${formatCountKo(item.recommendCount)}`);
+  if (item.recommendCount > 0) parts.push(`추천 ${formatCountKo(item.recommendCount)}`);
   if (item.commentCount > 0) parts.push(`댓글 ${formatCountKo(item.commentCount)}`);
   return parts.join(" · ");
 }
@@ -758,29 +646,6 @@ function isUsableArticleImage(value, options = {}) {
   } catch {
     return false;
   }
-}
-
-function parseDealTitle(rawTitle) {
-  let title = stripHtml(rawTitle).replace(/^\s*(?:hot|HOT)\s*/g, "").trim();
-  let mallName = "";
-  const priceParts = [];
-
-  const mallMatch = title.match(/^\[([^\]]+)\]\s*(.+)$/);
-  if (mallMatch) {
-    mallName = mallMatch[1].trim();
-    title = mallMatch[2].trim();
-  }
-
-  title = title.replace(/\(([^()]*?(?:원|무료|배송|달러|위안|엔|￦|₩|\$|€)[^()]*)\)\s*$/g, (_, value) => {
-    priceParts.unshift(value.trim());
-    return "";
-  }).trim();
-
-  return {
-    title,
-    mallName,
-    price: uniqueCompact(priceParts).join(" / "),
-  };
 }
 
 function extractCellText(row, className) {
