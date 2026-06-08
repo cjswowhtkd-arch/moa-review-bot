@@ -356,7 +356,7 @@
         <nav class="main-tab-wrapper" aria-label="메인 카테고리">
             <button class="main-tab-btn active" data-section="naverCafe">네이버 카페</button>
             <button class="main-tab-btn" data-section="community">커뮤니티 인기</button>
-            <button class="main-tab-btn" data-section="hotDeal">쇼핑 핫딜</button>
+            <button class="main-tab-btn" data-section="mediaTrend">미디어 트렌드</button>
         </nav>
 
         <nav id="feedFilterTabs" class="tab-wrapper filter-tabs" aria-label="세부 필터">
@@ -381,7 +381,7 @@
         const fallbackImages = {
             naverCafe: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=900&q=80",
             community: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80",
-            hotDeal: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=900&q=80"
+            mediaTrend: "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?auto=format&fit=crop&w=900&q=80"
         };
 
         const sections = {
@@ -407,16 +407,16 @@
                     }
                 ]
             },
-            hotDeal: {
-                label: "쇼핑 핫딜",
-                source: "실시간 핫딜/할인 정보",
-                empty: "쇼핑 핫딜 데이터 연결 준비 중입니다.",
+            mediaTrend: {
+                label: "미디어 트렌드",
+                source: "영상/OTT 실시간 화제",
+                empty: "미디어 트렌드 데이터 연결 준비 중입니다.",
                 feeds: [
                     {
-                        key: "hotDeals",
-                        label: "쇼핑 핫딜",
-                        dataKeys: ["hotDeals", "shoppingHotDeals", "shopping", "deals"],
-                        source: "뽐뿌·어미새·루리웹 핫딜"
+                        key: "mediaTrends",
+                        label: "미디어 트렌드",
+                        dataKeys: ["mediaTrends", "mediaTrend", "media", "youtubeTrends", "ottTrends"],
+                        source: "유튜브·넷플릭스·OTT 화제"
                     }
                 ]
             }
@@ -426,7 +426,7 @@
         let activeFeedBySection = {
             naverCafe: "daily",
             community: "communityPopular",
-            hotDeal: "hotDeals"
+            mediaTrend: "mediaTrends"
         };
         let rawDataStore = {};
 
@@ -547,14 +547,10 @@
 
         function toCardView(item, index, sectionKey) {
             const source = getItemSource(item, sectionKey);
-            const price = firstText(item.price, item.salePrice, item.discountPrice);
-            const mall = firstText(item.mallName, item.shopName, item.storeName);
-            const baseTitle = firstText(item.title, item.subject, item.name, "제목 없음");
-            const title =
-                sectionKey === "hotDeal" && (mall || price)
-                    ? `[${[mall, price].filter(Boolean).join(" / ")}] ${baseTitle}`
-                    : baseTitle;
+            const baseTitle = firstText(item.title, item.subject, item.name, item.videoTitle, item.contentTitle, "제목 없음");
+            const title = baseTitle;
             const viewCount = firstNumber(item.readCount, item.viewCount, item.views);
+            const viewTime = firstText(item.viewTime, item.watchTime, item.duration, item.runtime, item.publishedLabel);
             const recommendCount = firstNumber(
                 item.recommendCount,
                 item.recommend,
@@ -567,15 +563,28 @@
             return {
                 rank: firstNumber(item.rank, item.naverRank) || index + 1,
                 title,
-                link: firstText(item.link, item.url, item.articleUrl, item.productUrl),
-                img: firstText(item.img, item.thumbnail, item.thumbnailUrl, item.image, item.imageUrl, item.productImage),
-                meta: buildMeta(sectionKey, { source, viewCount, recommendCount, commentCount })
+                link: firstText(item.link, item.url, item.articleUrl, item.watchUrl, item.contentUrl),
+                img: firstText(
+                    item.img,
+                    item.thumbnail,
+                    item.thumbnailUrl,
+                    item.image,
+                    item.imageUrl,
+                    item.videoThumbnail,
+                    item.contentThumbnail,
+                    item.poster,
+                    item.posterUrl
+                ),
+                meta: buildMeta(sectionKey, { source, viewCount, viewTime, recommendCount, commentCount })
             };
         }
 
         function buildMeta(sectionKey, values) {
             const parts = [];
             if (values.viewCount > 0) parts.push(`조회 ${formatCount(values.viewCount)}`);
+            if (sectionKey === "mediaTrend" && values.viewCount <= 0 && values.viewTime) {
+                parts.push(`조회시간 ${values.viewTime}`);
+            }
 
             if (sectionKey === "naverCafe") {
                 if (values.recommendCount > 0) parts.push(`좋아요 ${formatCount(values.recommendCount)}`);
@@ -593,8 +602,15 @@
                 return firstText(item.cafeName, item.source, sections[sectionKey].label);
             }
 
-            if (sectionKey === "hotDeal") {
-                return firstText(item.source, item.siteName, item.boardName, sections[sectionKey].label);
+            if (sectionKey === "mediaTrend") {
+                return firstText(
+                    item.platformName,
+                    item.channelName,
+                    item.source,
+                    item.siteName,
+                    item.boardName,
+                    sections[sectionKey].label
+                );
             }
 
             return firstText(item.communityName, item.source, item.siteName, item.boardName, sections[sectionKey].label);
