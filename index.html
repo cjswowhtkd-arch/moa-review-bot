@@ -45,7 +45,7 @@
             max-width: 520px;
             min-height: 100vh;
             margin: 0 auto;
-            padding: 26px 18px 104px;
+            padding: 26px 18px 34px;
             background:
                 linear-gradient(180deg, transparent 0, rgba(5, 6, 8, 0.2) 230px, var(--bg) 390px),
                 transparent;
@@ -58,17 +58,19 @@
             margin-bottom: 42px;
         }
 
-        .menu-mark {
-            width: 34px;
-            height: 34px;
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 6px;
-        }
-
-        .menu-mark span {
-            border: 3px solid rgba(255, 255, 255, 0.92);
-            border-radius: 7px;
+        .brand-mark {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.26);
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.24);
+            font-size: 13px;
+            font-weight: 900;
+            letter-spacing: 0;
         }
 
         .sync-pill {
@@ -168,14 +170,14 @@
 
         .trend-card {
             width: 100%;
-            min-height: 154px;
+            min-height: 142px;
             background: rgba(21, 23, 27, 0.96);
             border: 1px solid var(--line);
-            border-radius: 24px;
-            padding: 22px;
+            border-radius: 18px;
+            padding: 18px;
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 116px;
-            gap: 18px;
+            grid-template-columns: minmax(0, 1fr) 108px;
+            gap: 15px;
             align-items: center;
             box-shadow: 0 20px 36px rgba(0, 0, 0, 0.34);
             cursor: pointer;
@@ -194,10 +196,10 @@
             align-items: center;
             gap: 5px;
             color: #f2f4f7;
-            font-size: 21px;
+            font-size: 18px;
             font-weight: 900;
             line-height: 1;
-            margin-bottom: 18px;
+            margin-bottom: 12px;
         }
 
         .rank-dot {
@@ -212,20 +214,17 @@
         .card-title {
             margin: 0;
             color: var(--text);
-            font-size: 24px;
-            line-height: 1.34;
-            font-weight: 900;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
+            font-size: 16px;
+            line-height: 1.45;
+            font-weight: 820;
+            overflow-wrap: anywhere;
             word-break: keep-all;
         }
 
         .card-desc {
             margin: 14px 0 0;
             color: var(--muted);
-            font-size: 16px;
+            font-size: 13px;
             line-height: 1.45;
             font-weight: 800;
             display: -webkit-box;
@@ -235,8 +234,8 @@
         }
 
         .thumb-box {
-            width: 116px;
-            height: 116px;
+            width: 108px;
+            height: 108px;
             border-radius: 8px;
             overflow: hidden;
             background: #252932;
@@ -256,52 +255,6 @@
             font-size: 14px;
             font-weight: 800;
             padding: 38px 0;
-        }
-
-        .bottom-nav {
-            position: fixed;
-            left: 50%;
-            bottom: 0;
-            z-index: 1000;
-            width: min(100%, 520px);
-            transform: translateX(-50%);
-            height: 76px;
-            background: rgba(32, 36, 42, 0.98);
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            align-items: center;
-            padding-bottom: env(safe-area-inset-bottom);
-        }
-
-        .nav-btn {
-            border: 0;
-            background: transparent;
-            color: rgba(255, 255, 255, 0.52);
-            font-size: 11px;
-            font-weight: 800;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .nav-icon {
-            width: 26px;
-            height: 26px;
-            border-radius: 8px;
-            border: 3px solid currentColor;
-            display: block;
-        }
-
-        .nav-btn.active {
-            color: #fff;
-        }
-
-        .nav-btn.active .nav-icon {
-            background: #fff;
-            border-color: #fff;
-            border-radius: 50%;
         }
 
         .modal-overlay {
@@ -401,22 +354,22 @@
             }
 
             .trend-card {
-                grid-template-columns: minmax(0, 1fr) 98px;
+                grid-template-columns: minmax(0, 1fr) 92px;
                 gap: 14px;
                 padding: 18px;
             }
 
             .thumb-box {
-                width: 98px;
-                height: 98px;
+                width: 92px;
+                height: 92px;
             }
 
             .card-title {
-                font-size: 21px;
+                font-size: 15px;
             }
 
             .card-desc {
-                font-size: 14px;
+                font-size: 12px;
             }
         }
     </style>
@@ -424,9 +377,7 @@
 <body>
     <main class="app-shell">
         <header class="top-bar">
-            <div class="menu-mark" aria-hidden="true">
-                <span></span><span></span><span></span><span></span>
-            </div>
+            <div class="brand-mark" aria-hidden="true">M</div>
             <div id="syncStatus" class="sync-pill">동기화 중</div>
         </header>
 
@@ -437,30 +388,20 @@
         </section>
 
         <nav class="tab-wrapper" aria-label="카테고리">
-            <button id="tab-drama" class="tab-btn active" data-category="drama">드라마/웹툰</button>
-            <button id="tab-tech" class="tab-btn" data-category="tech">IT/테크</button>
-            <button id="tab-dessert" class="tab-btn" data-category="dessert">디저트 핫플</button>
-            <button id="tab-news" class="tab-btn" data-category="news">주요 뉴스</button>
-            <button id="tab-stock" class="tab-btn" data-category="stock">증시</button>
+            <button id="tab-daily" class="tab-btn active" data-category="daily">일간인기글</button>
+            <button id="tab-weekly" class="tab-btn" data-category="weekly">주간인기글</button>
+            <button id="tab-monthly" class="tab-btn" data-category="monthly">월간인기글</button>
         </nav>
 
         <div class="summary-row">
-            <span id="activeSummary">최근 48시간 TOP 20</span>
-            <span>1시간 자동 갱신</span>
+            <span id="activeSummary">일간인기글 TOP 20</span>
+            <span>네이버 조회 랭킹 기반</span>
         </div>
 
         <section class="grid-container" id="cardGrid">
             <p class="empty-state">실시간 트렌드를 불러오는 중입니다.</p>
         </section>
     </main>
-
-    <nav class="bottom-nav" aria-label="하단 메뉴">
-        <button class="nav-btn"><span class="nav-icon"></span><span>홈</span></button>
-        <button class="nav-btn"><span class="nav-icon"></span><span>검색</span></button>
-        <button class="nav-btn active"><span class="nav-icon"></span><span>인기</span></button>
-        <button class="nav-btn"><span class="nav-icon"></span><span>저장</span></button>
-        <button class="nav-btn"><span class="nav-icon"></span><span>알림</span></button>
-    </nav>
 
     <div id="detailModal" class="modal-overlay">
         <div class="modal-window">
@@ -479,15 +420,14 @@
         const dbEndpoint = "https://chosanghee00001-default-rtdb.firebaseio.com/categories.json";
         const maxItems = 20;
         const syncIntervalMs = 60 * 60 * 1000;
+        const defaultFallback = "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=900&q=80";
         const fallbackImages = {
-            drama: "https://images.unsplash.com/photo-1598899134739-24c46f58b8c0?auto=format&fit=crop&w=900&q=80",
-            tech: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80",
-            dessert: "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=900&q=80",
-            news: "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=900&q=80",
-            stock: "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?auto=format&fit=crop&w=900&q=80"
+            daily: defaultFallback,
+            weekly: defaultFallback,
+            monthly: defaultFallback
         };
 
-        let activeTab = "drama";
+        let activeTab = "daily";
         let rawDataStore = {};
 
         const grid = document.getElementById("cardGrid");
@@ -556,12 +496,12 @@
             thumbBox.className = "thumb-box";
 
             const img = document.createElement("img");
-            img.src = safeUrl(item.img) || fallbackImages[activeTab];
+            img.src = safeUrl(item.img) || fallbackImages[activeTab] || defaultFallback;
             img.alt = item.title || "뉴스 기사 이미지";
             img.loading = "lazy";
             img.onerror = () => {
                 img.onerror = null;
-                img.src = fallbackImages[activeTab];
+                img.src = fallbackImages[activeTab] || defaultFallback;
             };
 
             thumbBox.appendChild(img);
@@ -592,11 +532,9 @@
 
         function categoryLabel(key) {
             const labels = {
-                drama: "드라마/웹툰",
-                tech: "IT/테크",
-                dessert: "디저트 핫플",
-                news: "주요 뉴스",
-                stock: "증시"
+                daily: "일간인기글",
+                weekly: "주간인기글",
+                monthly: "월간인기글"
             };
             return labels[key] || "트렌드";
         }
@@ -618,10 +556,10 @@
         }
 
         function openModal(item, rank) {
-            document.getElementById("modalImg").src = safeUrl(item.img) || fallbackImages[activeTab];
+            document.getElementById("modalImg").src = safeUrl(item.img) || fallbackImages[activeTab] || defaultFallback;
             document.getElementById("modalTitle").textContent = item.title || "제목 없음";
             document.getElementById("modalContent").textContent = item.content || "원문 링크에서 상세 내용을 확인할 수 있습니다.";
-            document.getElementById("modalMeta").textContent = `TOP ${rank} · ${sourceLabel(item)} · 최근 48시간`;
+            document.getElementById("modalMeta").textContent = `TOP ${rank} · ${sourceLabel(item)}`;
             document.getElementById("modalGoBtn").href = safeUrl(item.link) || "#";
             modal.style.display = "flex";
         }
