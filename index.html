@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>모아리뷰 실시간 트렌드</title>
+    <title>모아리뷰 카페 인기글</title>
     <style>
         :root {
             --bg: #050608;
@@ -382,20 +382,19 @@
         </header>
 
         <section class="hero">
-            <h1 class="hero-title">오늘<br>인기글</h1>
+            <h1 class="hero-title">카페<br>인기글</h1>
             <div class="hero-line"></div>
-            <p class="hero-sub">MOAREVIEW TODAY</p>
+            <p class="hero-sub">NAVER CAFE HOT</p>
         </section>
 
         <nav class="tab-wrapper" aria-label="카테고리">
-            <button id="tab-daily" class="tab-btn active" data-category="daily">일간인기글</button>
-            <button id="tab-weekly" class="tab-btn" data-category="weekly">주간인기글</button>
-            <button id="tab-monthly" class="tab-btn" data-category="monthly">월간인기글</button>
+            <button id="tab-daily" class="tab-btn active" data-category="daily">실시간HOT</button>
+            <button id="tab-weekly" class="tab-btn" data-category="weekly">주간TOP</button>
         </nav>
 
         <div class="summary-row">
-            <span id="activeSummary">일간인기글 TOP 20</span>
-            <span>네이버 조회 랭킹 기반</span>
+            <span id="activeSummary">실시간HOT TOP 10</span>
+            <span>카페 조회수 기반</span>
         </div>
 
         <section class="grid-container" id="cardGrid">
@@ -406,25 +405,24 @@
     <div id="detailModal" class="modal-overlay">
         <div class="modal-window">
             <span class="close-icon" id="closeModalBtn">&times;</span>
-            <img id="modalImg" class="modal-thumb" src="" alt="뉴스 기사 이미지">
+            <img id="modalImg" class="modal-thumb" src="" alt="카페 게시글 이미지" referrerpolicy="no-referrer">
             <div class="modal-info">
                 <div id="modalMeta" class="modal-meta"></div>
                 <h2 id="modalTitle"></h2>
                 <p id="modalContent"></p>
-                <a id="modalGoBtn" href="#" target="_blank" rel="noopener noreferrer" class="action-link">네이버에서 보기</a>
+                <a id="modalGoBtn" href="#" target="_blank" rel="noopener noreferrer" class="action-link">카페에서 보기</a>
             </div>
         </div>
     </div>
 
     <script type="module">
         const dbEndpoint = "https://chosanghee00001-default-rtdb.firebaseio.com/categories.json";
-        const maxItems = 20;
+        const maxItems = 10;
         const syncIntervalMs = 60 * 60 * 1000;
-        const defaultFallback = "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=900&q=80";
+        const defaultFallback = "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=900&q=80";
         const fallbackImages = {
             daily: defaultFallback,
             weekly: defaultFallback,
-            monthly: defaultFallback
         };
 
         let activeTab = "daily";
@@ -496,8 +494,9 @@
             thumbBox.className = "thumb-box";
 
             const img = document.createElement("img");
+            img.referrerPolicy = "no-referrer";
             img.src = safeUrl(item.img) || fallbackImages[activeTab] || defaultFallback;
-            img.alt = item.title || "뉴스 기사 이미지";
+            img.alt = item.title || "카페 게시글 이미지";
             img.loading = "lazy";
             img.onerror = () => {
                 img.onerror = null;
@@ -525,6 +524,13 @@
         }
 
         function sourceLabel(item) {
+            if (Number(item.readCount || 0) > 0) {
+                const cafeName = item.cafeName || item.source || "네이버 카페";
+                const read = formatCount(item.readCount);
+                const comments = formatCount(item.commentCount || 0);
+                return `${cafeName} · 조회 ${read} · 댓글 ${comments}`;
+            }
+
             const count = Number(item.sourceCount || item.sources?.length || 0);
             const source = item.source || item.sources?.[0] || "검증 소스";
             return count > 1 ? `${source} 외 ${count - 1}` : source;
@@ -532,11 +538,16 @@
 
         function categoryLabel(key) {
             const labels = {
-                daily: "일간인기글",
-                weekly: "주간인기글",
-                monthly: "월간인기글"
+                daily: "실시간HOT",
+                weekly: "주간TOP"
             };
             return labels[key] || "트렌드";
+        }
+
+        function formatCount(value) {
+            const number = Number(value || 0);
+            if (number >= 10000) return `${Math.round((number / 10000) * 10) / 10}만`;
+            return number.toLocaleString("ko-KR");
         }
 
         function safeUrl(value) {
