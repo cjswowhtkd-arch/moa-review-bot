@@ -1,7 +1,8 @@
 // [bot.mjs] MoaReview trend collector.
-// Naver Cafe uses the public popular API. Community and hot-deal feeds use
+// Naver Cafe uses the public popular API. Community and media feeds use
 // each site's own best/hot list order, then rank candidates by engagement.
 
+import crypto from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +25,13 @@ const DRY_RUN = process.env.DRY_RUN === "1";
 const NAVER_CAFE_API_BASE =
   "https://apis.naver.com/cafe-home-web/cafe-home/v1/popular";
 const NAVER_CAFE_ARTICLE_API_BASE = "https://article.cafe.naver.com/gw/v4/cafes";
+const NAVER_TV_PAGE_URL = "https://tv.naver.com/r";
+const NAVER_TV_TOP100_API_URL =
+  "https://apis.naver.com/now_web2/now_web_api/v1/category/all/clips?order=popular&size=100";
+const NAVER_TV_API_SECRET =
+  "nbxvs5nwNG9QKEWK0ADjYA4JZoujF4gHcIwvoCxFTPAeamq5eemvt5IWAYXxrbYM";
+const YOUTUBE_CHARTS_API_URL = "https://charts.youtube.com/youtubei/v1/browse?alt=json";
+const YOUTUBE_CHARTS_PAGE_URL = "https://charts.youtube.com/charts/TrendingVideos/kr";
 
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -237,8 +245,145 @@ async function fetchAggregateTrend({ key, label, type, sources, fallbackImage })
 }
 
 async function fetchMediaTrends() {
-  console.log("\n[미디어 트렌드] 유튜브/OTT 트렌드 소스 연결 준비 중");
-  return [];
+  console.log("\n[미디어 트렌드] 네이버TV TOP100, YouTube Charts 공식 랭킹 수집");
+
+  const sourceFetchers = [
+    { label: "네이버TV TOP100", fetcher: fetchNaverTvTop100 },
+    { label: "YouTube Charts 인기 급상승 음악", fetcher: fetchYoutubeChartsTrendingVideos },
+  ];
+
+  const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
+    try {
+      const items = await source.fetcher();
+      console.log(`  - ${source.label}: ${items.length}개`);
+      return items.slice(0, SOURCE_ITEM_LIMIT);
+    } catch (error) {
+      console.warn(`  - ${source.label} 수집 실패: ${error.message}`);
+      return [];
+    }
+  });
+
+  const rankedItems = dedupeItems(sourceResults.flat())
+    .map((item) => ({
+      ...item,
+      type: "media",
+      trendScore: calculateTrendScore(item, "media"),
+    }))
+    .sort(compareTrendItems);
+
+  const topItems = selectBalancedTopItems(rankedItems, MAX_ITEMS)
+    .map((item, index) => toPublicTrendItem(item, index, "media", FALLBACK_IMAGES.mediaTrend));
+
+  console.log(
+    `  - 통합 후보 ${rankedItems.length}개, 이미지 ${
+      topItems.filter((item) => isHttpUrl(item.img)).length
+    }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
+  );
+
+  return topItems;
+}
+
+async function fetchNaverTvTop100() {
+  const clock = await fetchNaverTvClock();
+  const signedUrl = signNaverTvApiUrl(NAVER_TV_TOP100_API_URL, clock);
+  const response = await fetchJsonWithHeaders(signedUrl, {
+    headers: naverTvHeaders(),
+  });
+  const items = response?.result?.data || [];
+  const basis = response?.result?.aggregationCriteria || "시청자수와 시청 시간 기준";
+
+  return items
+    .filter((item) => item?.clipNo && item.title)
+    .map((item, index) => ({
+      sourceRank: index + 1,
+      title: stripHtml(item.title),
+      link: `https://tv.naver.com/v/${item.clipNo}`,
+      img: normalizeImageUrl(item.thumbnailImageUrl),
+      thumbnail: normalizeImageUrl(item.thumbnailImageUrl),
+      platformName: "네이버TV",
+      source: "네이버TV",
+      siteName: "네이버TV",
+      boardName: "TOP100",
+      sourceKey: "naverTvTop100",
+      sourceUrl: NAVER_TV_PAGE_URL,
+      channelName: item.channelName || "네이버TV",
+      viewCount: toNumber(item.playCount),
+      recommendCount: toNumber(item.likeItCount),
+      commentCount: toNumber(item.commentCount),
+      viewTime: item.displayPlayTime || secondsToDuration(item.playTime),
+      publishedLabel: item.displayPlayTime || secondsToDuration(item.playTime),
+      publishedAt: toIsoDate(item.firstExposureDatetime || item.registerDateTime),
+      rankingBasis: `네이버TV TOP100 공식 랭킹 · ${basis}`,
+      videoId: item.videoId,
+      clipNo: item.clipNo,
+    }));
+}
+
+async function fetchYoutubeChartsTrendingVideos() {
+  const response = await fetchJsonWithHeaders(YOUTUBE_CHARTS_API_URL, {
+    method: "POST",
+    headers: {
+      ...basicBrowserHeaders(),
+      "Content-Type": "application/json",
+      Origin: "https://charts.youtube.com",
+      Referer: YOUTUBE_CHARTS_PAGE_URL,
+    },
+    body: JSON.stringify({
+      context: {
+        client: {
+          clientName: "WEB_MUSIC_ANALYTICS",
+          clientVersion: "2.0",
+          hl: "ko",
+          gl: "KR",
+          experimentIds: [],
+          experimentsToken: "",
+          theme: "MUSIC",
+        },
+        capabilities: {},
+        request: { internalExperimentFlags: [] },
+      },
+      browseId: "FEmusic_analytics_charts_home",
+      query:
+        "flags=MusicCharts__enable_apac_and_shorts_charts_expansion&perspective=CHART_DETAILS&chart_params_country_code=kr&chart_params_chart_type=TRENDING_VIDEOS",
+    }),
+  });
+
+  const videoViews = [];
+  walk(response, (node) => {
+    if (Array.isArray(node?.videoViews)) videoViews.push(...node.videoViews);
+  });
+
+  return videoViews
+    .filter((item) => item?.id && item.title && item.isVisible !== false)
+    .map((item, index) => {
+      const rank = toNumber(item.chartEntryMetadata?.currentPosition) || index + 1;
+      const artists = (item.artists || []).map((artist) => artist.name).filter(Boolean);
+      const channelName = item.channelName || artists.join(", ") || "YouTube";
+
+      return {
+        sourceRank: rank,
+        title: stripHtml(item.title),
+        link: `https://www.youtube.com/watch?v=${item.id}`,
+        img: pickLargestThumbnail(item.thumbnail?.thumbnails),
+        thumbnail: pickLargestThumbnail(item.thumbnail?.thumbnails),
+        platformName: "YouTube Charts",
+        source: "YouTube Charts",
+        siteName: "YouTube",
+        boardName: "인기 급상승 음악",
+        sourceKey: "youtubeChartsTrendingVideos",
+        sourceUrl: YOUTUBE_CHARTS_PAGE_URL,
+        channelName,
+        viewCount: 0,
+        recommendCount: 0,
+        commentCount: 0,
+        viewTime: secondsToDuration(item.videoDuration),
+        publishedLabel: secondsToDuration(item.videoDuration),
+        publishedAt: youtubeReleaseDateToIso(item.releaseDate),
+        rankingBasis: "YouTube Charts 한국 인기 급상승 음악 공식 랭킹",
+        videoId: item.id,
+        artists,
+      };
+    });
 }
 
 async function enrichNaverCafeArticle(item) {
@@ -542,6 +687,66 @@ function calculateTrendScore(item, type) {
   );
 }
 
+async function fetchNaverTvClock() {
+  const startedAt = Date.now();
+  const html = await fetchText(NAVER_TV_PAGE_URL, {
+    referer: NAVER_TV_PAGE_URL,
+  });
+  const nextDataText = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/)?.[1] || "";
+  const nextData = nextDataText ? JSON.parse(nextDataText) : {};
+  const serverTime = Number(nextData?.props?.serverTime) || Date.now();
+  return { serverTime, startedAt };
+}
+
+function signNaverTvApiUrl(rawUrl, clock) {
+  const url = new URL(rawUrl);
+  const msgpad = String(clock.serverTime + (Date.now() - clock.startedAt));
+  const signatureTarget = `${url.toString().slice(0, 255)}${msgpad}`;
+  const md = crypto
+    .createHmac("sha1", NAVER_TV_API_SECRET)
+    .update(signatureTarget)
+    .digest("base64");
+
+  url.searchParams.set("msgpad", msgpad);
+  url.searchParams.set("md", md);
+  return url.toString();
+}
+
+function basicBrowserHeaders() {
+  return {
+    "User-Agent": USER_AGENT,
+    Accept: "application/json,text/plain,*/*",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.6,en;q=0.5",
+  };
+}
+
+function naverTvHeaders() {
+  return {
+    ...basicBrowserHeaders(),
+    Origin: "https://tv.naver.com",
+    Referer: NAVER_TV_PAGE_URL,
+  };
+}
+
+async function fetchJsonWithHeaders(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs || HTTP_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: options.method || "GET",
+      headers: options.headers || basicBrowserHeaders(),
+      body: options.body,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    return response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchJson(url, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs || HTTP_TIMEOUT_MS);
@@ -651,6 +856,51 @@ function isUsableArticleImage(value, options = {}) {
 function extractCellText(row, className) {
   const pattern = new RegExp(`<td\\b[^>]*class=["'][^"']*${escapeRegExp(className)}[^"']*["'][^>]*>([\\s\\S]*?)<\\/td>`, "i");
   return stripHtml(String(row || "").match(pattern)?.[1] || "");
+}
+
+function pickLargestThumbnail(thumbnails) {
+  const list = Array.isArray(thumbnails) ? thumbnails : [];
+  const best = list
+    .filter((item) => isHttpUrl(item?.url))
+    .sort((a, b) => toNumber(b.width) * toNumber(b.height) - toNumber(a.width) * toNumber(a.height))[0];
+  return best?.url || "";
+}
+
+function secondsToDuration(value) {
+  const seconds = toNumber(value);
+  if (seconds <= 0) return "";
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainSeconds = seconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(remainSeconds).padStart(2, "0")}`;
+}
+
+function toIsoDate(value) {
+  const normalized = String(value || "").replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+  const time = Date.parse(normalized);
+  return Number.isNaN(time) ? new Date().toISOString() : new Date(time).toISOString();
+}
+
+function youtubeReleaseDateToIso(value) {
+  const year = toNumber(value?.year);
+  const month = toNumber(value?.month);
+  const day = toNumber(value?.day);
+  if (!year || !month || !day) return new Date().toISOString();
+  return new Date(year, month - 1, day).toISOString();
+}
+
+function walk(node, visit) {
+  visit(node);
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    node.forEach((item) => walk(item, visit));
+    return;
+  }
+  Object.values(node).forEach((value) => walk(value, visit));
 }
 
 function parseKoreanDate(value) {
