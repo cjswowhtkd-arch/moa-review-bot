@@ -31,7 +31,6 @@ const CAFE_RANGES = [
     label: "실시간HOT",
     endpoint: "realtime",
     description: "네이버 카페 실시간 HOT 중 최근 글을 조회수 기준으로 정렬합니다.",
-    maxAgeHours: 48,
   },
   {
     key: "weekly",
@@ -46,7 +45,7 @@ const FALLBACK_IMAGE =
 const articleImageCache = new Map();
 
 async function fetchCafeTrend(range) {
-  console.log(`\n[${range.label}] 네이버 카페 ${range.endpoint} 조회수 기반 수집`);
+  console.log(`\n[${range.label}] 네이버 카페 ${range.endpoint} 공식 랭킹 수집`);
 
   const rawItems = await fetchNaverCafePopular(range.endpoint);
   const articles = rawItems
@@ -54,13 +53,7 @@ async function fetchCafeTrend(range) {
     .map((entry) => normalizeCafeArticle(entry.item))
     .filter((item) => item.title && item.link && item.readCount > 0);
 
-  const freshArticles = range.maxAgeHours
-    ? articles.filter((item) => isWithinHours(item.publishedAt, range.maxAgeHours))
-    : articles;
-  const candidates =
-    freshArticles.length >= MAX_ITEMS
-      ? freshArticles
-      : articles;
+  const candidates = articles;
 
   const enrichedItems = await mapLimit(
     candidates.sort(compareCafeArticles).slice(0, MAX_ITEMS),
@@ -83,7 +76,8 @@ async function fetchCafeTrend(range) {
       sources: uniqueCompact(["네이버 카페", item.cafeName]),
       sourceCount: 1,
       publishedAt: item.publishedAt,
-      rankingBasis: `${range.label} 조회수`,
+      rankingBasis: `${range.label} 네이버 공식 랭킹`,
+      naverRank: item.naverRank,
       readCount: item.readCount,
       commentCount: item.commentCount,
       likeCount: item.likeCount,
@@ -94,7 +88,7 @@ async function fetchCafeTrend(range) {
     }));
 
   console.log(
-    `  - 후보 ${articles.length}개, 본문첫이미지 ${enrichedItems.filter((item) => item.firstImage).length}개, 최신필터 ${freshArticles.length}개, 최종 ${topItems.length}/${MAX_ITEMS}개`
+    `  - 후보 ${articles.length}개, 본문첫이미지 ${enrichedItems.filter((item) => item.firstImage).length}개, 최종 ${topItems.length}/${MAX_ITEMS}개`
   );
   return topItems;
 }
@@ -159,6 +153,7 @@ function normalizeCafeArticle(item) {
     title: stripHtml(item.subject),
     link: buildCafeArticleUrl(item),
     img: normalizeCafeImage(item.representImage),
+    naverRank: toNumber(item.rank),
     readCount: toNumber(item.readCount),
     commentCount: toNumber(item.commentCount),
     likeCount: toNumber(item.likeCount),
@@ -187,11 +182,18 @@ function buildCafeArticleUrl(item) {
 
 function compareCafeArticles(a, b) {
   return (
-    b.readCount - a.readCount ||
+    normalizeRank(a.naverRank) - normalizeRank(b.naverRank) ||
+    normalizeRank(a.rank) - normalizeRank(b.rank) ||
     b.commentCount - a.commentCount ||
     b.likeCount - a.likeCount ||
+    b.readCount - a.readCount ||
     Date.parse(b.publishedAt) - Date.parse(a.publishedAt)
   );
+}
+
+function normalizeRank(value) {
+  const rank = toNumber(value);
+  return rank > 0 ? rank : Number.MAX_SAFE_INTEGER;
 }
 
 async function startRobot() {
