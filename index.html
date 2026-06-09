@@ -428,7 +428,7 @@
 
         <div class="summary-row">
             <span id="activeSummary">실시간HOT TOP 10</span>
-            <span id="activeSource">치지직,SOOP 시청자수</span>
+            <span id="activeSource">치지직,SOOP,트위치 시청자수</span>
         </div>
 
         <section class="grid-container" id="cardGrid">
@@ -449,14 +449,26 @@
         const sections = {
             mediaTrend: {
                 label: "미디어 트렌드",
-                source: "치지직,SOOP 시청자수",
+                source: "치지직,SOOP,트위치 시청자수",
                 empty: "미디어 트렌드 데이터 연결 준비 중입니다.",
                 feeds: [
                     {
-                        key: "mediaTrends",
-                        label: "미디어 트렌드",
-                        dataKeys: ["mediaTrends", "mediaTrend", "media", "liveTrends"],
-                        source: "치지직,SOOP 시청자수"
+                        key: "mediaChat",
+                        label: "채팅",
+                        dataKeys: ["mediaChat", "mediaTrends", "mediaTrend", "media", "liveTrends"],
+                        source: "치지직,SOOP,트위치 채팅 시청자수"
+                    },
+                    {
+                        key: "mediaGame",
+                        label: "게임",
+                        dataKeys: ["mediaGame"],
+                        source: "치지직,SOOP,트위치 게임 시청자수"
+                    },
+                    {
+                        key: "mediaMusic",
+                        label: "음악",
+                        dataKeys: ["mediaMusic"],
+                        source: "치지직,SOOP,트위치 음악 시청자수"
                     }
                 ]
             },
@@ -486,7 +498,7 @@
 
         let activeSection = "mediaTrend";
         let activeFeedBySection = {
-            mediaTrend: "mediaTrends",
+            mediaTrend: "mediaChat",
             naverCafe: "daily",
             community: "communityPopular"
         };
