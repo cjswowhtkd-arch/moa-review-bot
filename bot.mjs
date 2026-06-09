@@ -1,8 +1,7 @@
 // [bot.mjs] MoaReview trend collector.
-// Naver Cafe uses the public popular API. Community and media feeds use
-// each site's own best/hot list order, then rank candidates by engagement.
+// Cafe, community, and media feeds use each site's own official hot list order,
+// then rank candidates by engagement.
 
-import crypto from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,16 +19,14 @@ const HTTP_TIMEOUT_MS = toPositiveInt(process.env.HTTP_TIMEOUT_MS, 12000);
 const ARTICLE_TIMEOUT_MS = toPositiveInt(process.env.ARTICLE_TIMEOUT_MS, 9000);
 const ARTICLE_CONCURRENCY = toPositiveInt(process.env.ARTICLE_CONCURRENCY, 5);
 const SOURCE_CONCURRENCY = toPositiveInt(process.env.SOURCE_CONCURRENCY, 3);
+const RECENCY_HOURS = toPositiveInt(process.env.RECENCY_HOURS, 48);
+const EMBED_IMAGE_MAX_BYTES = toPositiveInt(process.env.EMBED_IMAGE_MAX_BYTES, 700000);
 const DRY_RUN = process.env.DRY_RUN === "1";
 
 const NAVER_CAFE_API_BASE =
   "https://apis.naver.com/cafe-home-web/cafe-home/v1/popular";
 const NAVER_CAFE_ARTICLE_API_BASE = "https://article.cafe.naver.com/gw/v4/cafes";
-const NAVER_TV_PAGE_URL = "https://tv.naver.com/r";
-const NAVER_TV_TOP100_API_URL =
-  "https://apis.naver.com/now_web2/now_web_api/v1/category/all/clips?order=popular&size=100";
-const NAVER_TV_API_SECRET =
-  "nbxvs5nwNG9QKEWK0ADjYA4JZoujF4gHcIwvoCxFTPAeamq5eemvt5IWAYXxrbYM";
+const DAUM_CAFE_TOP_URL = "https://m.cafe.daum.net/";
 const YOUTUBE_CHARTS_API_URL = "https://charts.youtube.com/youtubei/v1/browse?alt=json";
 const YOUTUBE_CHARTS_PAGE_URL = "https://charts.youtube.com/charts/TrendingVideos/kr";
 
@@ -43,13 +40,15 @@ const CAFE_RANGES = [
     key: "daily",
     label: "실시간HOT",
     endpoint: "realtime",
-    description: "네이버 카페 실시간 HOT 공식 랭킹입니다.",
+    description: "네이버 카페와 다음 카페 실시간 공식 인기글 랭킹입니다.",
+    includeDaum: true,
   },
   {
     key: "weekly",
     label: "주간TOP",
     endpoint: "weekly",
     description: "네이버 카페 주간 TOP 공식 랭킹입니다.",
+    includeDaum: false,
   },
 ];
 
@@ -60,13 +59,6 @@ const COMMUNITY_SOURCES = [
     siteName: "디시인사이드",
     url: "https://gall.dcinside.com/board/lists/?id=dcbest",
     parser: parseDcinsideBest,
-  },
-  {
-    key: "fmkoreaBest",
-    label: "에펨코리아 포텐",
-    siteName: "에펨코리아",
-    url: "https://www.fmkorea.com/best2",
-    parser: parseFmkoreaBest,
   },
 ];
 
@@ -132,48 +124,55 @@ async function startRobot() {
 }
 
 async function fetchCafeTrend(range) {
-  console.log(`\n[${range.label}] 네이버 카페 ${range.endpoint} 공식 랭킹 수집`);
+  const sourceLabel = range.includeDaum ? "네이버 카페 + 다음 카페" : "네이버 카페";
+  console.log(`\n[${range.label}] ${sourceLabel} 공식 인기글 수집`);
 
-  const rawItems = await fetchNaverCafePopular(range.endpoint);
-  const articles = rawItems
-    .filter((entry) => entry?.type === "ARTICLE" && entry.item)
-    .map((entry) => normalizeCafeArticle(entry.item))
-    .filter((item) => item.title && item.link && item.readCount > 0);
+  const sourceFetchers = [
+    { label: "네이버 카페", fetcher: () => fetchNaverCafeSource(range) },
+  ];
+  if (range.includeDaum) {
+    sourceFetchers.push({ label: "다음 카페", fetcher: () => fetchDaumCafeSource(range) });
+  }
 
-  const enrichedItems = await mapLimit(
-    articles.sort(compareCafeArticles).slice(0, MAX_ITEMS),
-    ARTICLE_CONCURRENCY,
-    enrichNaverCafeArticle
-  );
+  const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
+    try {
+      const items = await source.fetcher();
+      console.log(`  - ${source.label}: ${items.length}개`);
+      return items;
+    } catch (error) {
+      console.warn(`  - ${source.label} 수집 실패: ${error.message}`);
+      return [];
+    }
+  });
+
+  const allArticles = dedupeItems(sourceResults.flat()).filter((item) => item.title && item.link);
+  const recentArticles =
+    range.key === "daily"
+      ? allArticles.filter((item) => ageInHours(item.publishedAt) <= RECENCY_HOURS)
+      : allArticles;
+  const articlePool = recentArticles.length >= MAX_ITEMS ? recentArticles : allArticles;
+
+  const articles = articlePool
+    .map((item) => ({
+      ...item,
+      trendScore: calculateCafeTrendScore(item),
+    }))
+    .sort(compareCafeArticles)
+    .slice(0, Math.max(MAX_ITEMS * 2, MAX_ITEMS));
+
+  const enrichedItems = await mapLimit(articles, ARTICLE_CONCURRENCY, enrichCafeArticle);
 
   const topItems = enrichedItems
+    .map((item) => ({
+      ...item,
+      trendScore: calculateCafeTrendScore(item),
+    }))
     .sort(compareCafeArticles)
     .slice(0, MAX_ITEMS)
-    .map((item, index) => ({
-      rank: index + 1,
-      title: item.title,
-      content: `${range.label} · ${item.cafeName} · 조회 ${formatCountKo(
-        item.readCount
-      )} · 댓글 ${formatCountKo(item.commentCount)} · 좋아요 ${formatCountKo(item.likeCount)}`,
-      link: item.link,
-      img: item.firstImage || item.img || FALLBACK_IMAGES.naverCafe,
-      source: item.cafeName || "네이버 카페",
-      sources: uniqueCompact(["네이버 카페", item.cafeName]),
-      sourceCount: 1,
-      publishedAt: item.publishedAt,
-      rankingBasis: `${range.label} 네이버 카페 공식 랭킹`,
-      naverRank: item.naverRank,
-      readCount: item.readCount,
-      commentCount: item.commentCount,
-      likeCount: item.likeCount,
-      recommendCount: item.likeCount,
-      cafeName: item.cafeName,
-      cafeId: item.cafeId,
-      articleId: item.articleId,
-    }));
+    .map((item, index) => toPublicCafeTrendItem(item, index, range));
 
   console.log(
-    `  - 후보 ${articles.length}개, 본문첫이미지 ${
+    `  - 통합 후보 ${articles.length}개, 본문첫이미지 ${
       enrichedItems.filter((item) => item.firstImage).length
     }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
   );
@@ -237,7 +236,7 @@ async function fetchAggregateTrend({ key, label, type, sources, fallbackImage })
 
   console.log(
     `  - 통합 후보 ${candidates.length}개, 이미지 ${
-      topItems.filter((item) => isHttpUrl(item.img)).length
+      topItems.filter((item) => isDisplayableImage(item.img)).length
     }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
   );
 
@@ -245,10 +244,9 @@ async function fetchAggregateTrend({ key, label, type, sources, fallbackImage })
 }
 
 async function fetchMediaTrends() {
-  console.log("\n[미디어 트렌드] 네이버TV TOP100, YouTube Charts 공식 랭킹 수집");
+  console.log("\n[미디어 트렌드] YouTube Charts 공식 랭킹 수집");
 
   const sourceFetchers = [
-    { label: "네이버TV TOP100", fetcher: fetchNaverTvTop100 },
     { label: "YouTube Charts 인기 급상승 음악", fetcher: fetchYoutubeChartsTrendingVideos },
   ];
 
@@ -276,47 +274,11 @@ async function fetchMediaTrends() {
 
   console.log(
     `  - 통합 후보 ${rankedItems.length}개, 이미지 ${
-      topItems.filter((item) => isHttpUrl(item.img)).length
+      topItems.filter((item) => isDisplayableImage(item.img)).length
     }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
   );
 
   return topItems;
-}
-
-async function fetchNaverTvTop100() {
-  const clock = await fetchNaverTvClock();
-  const signedUrl = signNaverTvApiUrl(NAVER_TV_TOP100_API_URL, clock);
-  const response = await fetchJsonWithHeaders(signedUrl, {
-    headers: naverTvHeaders(),
-  });
-  const items = response?.result?.data || [];
-  const basis = response?.result?.aggregationCriteria || "시청자수와 시청 시간 기준";
-
-  return items
-    .filter((item) => item?.clipNo && item.title)
-    .map((item, index) => ({
-      sourceRank: index + 1,
-      title: stripHtml(item.title),
-      link: `https://tv.naver.com/v/${item.clipNo}`,
-      img: normalizeImageUrl(item.thumbnailImageUrl),
-      thumbnail: normalizeImageUrl(item.thumbnailImageUrl),
-      platformName: "네이버TV",
-      source: "네이버TV",
-      siteName: "네이버TV",
-      boardName: "TOP100",
-      sourceKey: "naverTvTop100",
-      sourceUrl: NAVER_TV_PAGE_URL,
-      channelName: item.channelName || "네이버TV",
-      viewCount: toNumber(item.playCount),
-      recommendCount: toNumber(item.likeItCount),
-      commentCount: toNumber(item.commentCount),
-      viewTime: item.displayPlayTime || secondsToDuration(item.playTime),
-      publishedLabel: item.displayPlayTime || secondsToDuration(item.playTime),
-      publishedAt: toIsoDate(item.firstExposureDatetime || item.registerDateTime),
-      rankingBasis: `네이버TV TOP100 공식 랭킹 · ${basis}`,
-      videoId: item.videoId,
-      clipNo: item.clipNo,
-    }));
 }
 
 async function fetchYoutubeChartsTrendingVideos() {
@@ -378,12 +340,18 @@ async function fetchYoutubeChartsTrendingVideos() {
         commentCount: 0,
         viewTime: secondsToDuration(item.videoDuration),
         publishedLabel: secondsToDuration(item.videoDuration),
-        publishedAt: youtubeReleaseDateToIso(item.releaseDate),
+        publishedAt: new Date().toISOString(),
+        releasedAt: youtubeReleaseDateToIso(item.releaseDate),
         rankingBasis: "YouTube Charts 한국 인기 급상승 음악 공식 랭킹",
         videoId: item.id,
         artists,
       };
     });
+}
+
+async function enrichCafeArticle(item) {
+  if (item.sourceKey === "daumCafeTop") return enrichDaumCafeArticle(item);
+  return enrichNaverCafeArticle(item);
 }
 
 async function enrichNaverCafeArticle(item) {
@@ -396,6 +364,48 @@ async function enrichNaverCafeArticle(item) {
     ...item,
     firstImage,
   };
+}
+
+async function enrichDaumCafeArticle(item) {
+  const detail = await fetchDaumCafeArticleDetail(item).catch((error) => {
+    console.warn(`  - 다음 카페 상세 정보 추출 실패: ${item.title} (${error.message})`);
+    return {};
+  });
+
+  return {
+    ...item,
+    ...detail,
+    readCount: detail.viewCount || item.readCount || item.viewCount || 0,
+    viewCount: detail.viewCount || item.viewCount || item.readCount || 0,
+    commentCount: detail.commentCount ?? item.commentCount ?? 0,
+    firstImage: detail.firstImage || "",
+    img: detail.firstImage || item.img || FALLBACK_IMAGES.naverCafe,
+    thumbnail: detail.firstImage || item.thumbnail || item.img || FALLBACK_IMAGES.naverCafe,
+  };
+}
+
+async function fetchDaumCafeArticleDetail(item) {
+  if (!isHttpUrl(item.link)) return {};
+
+  const cacheKey = `daum:${item.link}`;
+  if (articleImageCache.has(cacheKey)) return articleImageCache.get(cacheKey);
+
+  const html = await fetchText(item.link, {
+    timeoutMs: ARTICLE_TIMEOUT_MS,
+    referer: DAUM_CAFE_TOP_URL,
+  });
+  const firstImage = extractFirstImageFromHtml(html, {
+    baseUrl: item.link,
+    allowedHostIncludes: ["daumcdn.net"],
+  });
+  const meta = extractDaumCafeArticleMeta(html);
+  const detail = {
+    firstImage,
+    ...meta,
+  };
+
+  articleImageCache.set(cacheKey, detail);
+  return detail;
 }
 
 async function fetchNaverCafeFirstImage(item) {
@@ -431,7 +441,7 @@ async function fetchNaverCafeFirstImage(item) {
 }
 
 async function enrichExternalArticleImage(item, fallbackImage) {
-  if (isHttpUrl(item.img) && !item.preferDetailImage) {
+  if (isHttpUrl(item.img) && !item.preferDetailImage && !needsEmbeddedImage(item.img)) {
     return { ...item, img: item.img };
   }
 
@@ -440,10 +450,17 @@ async function enrichExternalArticleImage(item, fallbackImage) {
     return "";
   });
 
+  const image = firstImage || item.img || fallbackImage;
+  const displayImage = await embedImageIfNeeded(image, item).catch((error) => {
+    console.warn(`  - 보호 이미지 변환 실패: ${item.title} (${error.message})`);
+    return image;
+  });
+
   return {
     ...item,
-    firstImage,
-    img: firstImage || item.img || fallbackImage,
+    rawFirstImage: firstImage,
+    firstImage: displayImage,
+    img: displayImage,
   };
 }
 
@@ -477,6 +494,69 @@ async function fetchNaverCafePopular(endpoint) {
   return message?.result?.popularArticles || [];
 }
 
+async function fetchNaverCafeSource(range) {
+  const rawItems = await fetchNaverCafePopular(range.endpoint);
+  return rawItems
+    .filter((entry) => entry?.type === "ARTICLE" && entry.item)
+    .map((entry) => normalizeCafeArticle(entry.item, range))
+    .filter((item) => item.title && item.link && item.readCount > 0)
+    .sort(compareCafeArticles)
+    .slice(0, SOURCE_ITEM_LIMIT);
+}
+
+async function fetchDaumCafeSource(range) {
+  const html = await fetchText(DAUM_CAFE_TOP_URL, {
+    referer: DAUM_CAFE_TOP_URL,
+  });
+  return parseDaumCafePopular(html, range).slice(0, Math.max(SOURCE_ITEM_LIMIT, MAX_ITEMS));
+}
+
+function parseDaumCafePopular(html, range) {
+  const rows = [...String(html || "").matchAll(/<a\b[^>]*class=["'][^"']*popular-list__link[^"']*["'][\s\S]*?<\/a>/gi)]
+    .map((match) => match[0]);
+
+  return rows
+    .map((row, index) => {
+      const href = row.match(/<a\b[^>]*href=["']([^"']+)["']/i)?.[1] || "";
+      const link = absolutizeUrl(href, DAUM_CAFE_TOP_URL);
+      const title = stripHtml(
+        row.match(/<strong\b[^>]*class=["'][^"']*popular-list__title[^"']*["'][^>]*>([\s\S]*?)<\/strong>/i)?.[1] || ""
+      );
+      const cafeName = cleanCafeName(
+        row.match(/<span\b[^>]*class=["'][^"']*popular-list__cafe-name[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] ||
+          "다음 카페"
+      );
+      const sourceRank =
+        parseCount(
+          row.match(/<em\b[^>]*class=["'][^"']*popular-list__rank[^"']*["'][^>]*>([\s\S]*?)<\/em>/i)?.[1]
+        ) ||
+        index + 1;
+      const articleIds = extractDaumCafeArticleIds(link);
+
+      return {
+        sourceKey: "daumCafeTop",
+        sourceRank,
+        title,
+        link,
+        img: extractImageFromTag(row, DAUM_CAFE_TOP_URL),
+        thumbnail: extractImageFromTag(row, DAUM_CAFE_TOP_URL),
+        source: "다음 카페",
+        siteName: "다음 카페",
+        boardName: range.label,
+        cafeName,
+        viewCount: 0,
+        readCount: 0,
+        recommendCount: 0,
+        likeCount: 0,
+        commentCount: 0,
+        publishedAt: new Date().toISOString(),
+        rankingBasis: `${range.label} 다음 카페 공식 인기글`,
+        ...articleIds,
+      };
+    })
+    .filter((item) => item.title && item.link);
+}
+
 function parseDcinsideBest(html, source) {
   const rows = [...html.matchAll(/<tr\b[^>]*class=["'][^"']*ub-content[^"']*["'][\s\S]*?<\/tr>/gi)]
     .map((match) => match[0])
@@ -508,41 +588,23 @@ function parseDcinsideBest(html, source) {
   });
 }
 
-function parseFmkoreaBest(html, source) {
-  const rows = [...html.matchAll(/<li\b[^>]*class=["'][^"']*li_best2_pop[^"']*["'][\s\S]*?<\/li>/gi)]
-    .map((match) => match[0])
-    .filter((row) => !/li_best2_hotdeal1/i.test(row));
-
-  return rows.map((row, index) => {
-    const titleAnchor = row.match(/<h3\b[^>]*class=["'][^"']*title[^"']*["'][\s\S]*?<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
-    const title = stripHtml(row.match(/<span\b[^>]*class=["'][^"']*ellipsis-target[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || titleAnchor?.[2] || "");
-    const category = stripHtml(row.match(/<span\b[^>]*class=["'][^"']*category[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || "");
-    const regDate = stripHtml(row.match(/<span\b[^>]*class=["'][^"']*regdate[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || "");
-
-    return {
-      sourceRank: index + 1,
-      title,
-      link: absolutizeUrl(titleAnchor?.[1] || "", source.url),
-      img: extractImageFromTag(row, source.url),
-      recommendCount: parseCount(row.match(/<span\b[^>]*class=["'][^"']*count[^"']*["'][^>]*>([\d,]+)/i)?.[1]),
-      commentCount: parseCount(row.match(/<span\b[^>]*class=["'][^"']*comment_count[^"']*["'][^>]*>\s*\[?([\d,]+)/i)?.[1]),
-      communityName: category ? `${source.siteName} ${category}` : source.siteName,
-      publishedAt: parseKoreanDate(regDate),
-      rankingBasis: `${source.label} 공식 목록`,
-    };
-  });
-}
-
-function normalizeCafeArticle(item) {
+function normalizeCafeArticle(item, range) {
   return {
+    sourceKey: "naverCafePopular",
+    sourceRank: toNumber(item.rank),
     title: stripHtml(item.subject),
     link: buildCafeArticleUrl(item),
     img: normalizeImageUrl(item.representImage),
+    thumbnail: normalizeImageUrl(item.representImage),
+    source: "네이버 카페",
+    siteName: "네이버 카페",
+    boardName: range.label,
     naverRank: toNumber(item.rank),
     readCount: toNumber(item.readCount),
     viewCount: toNumber(item.readCount),
     commentCount: toNumber(item.commentCount),
     likeCount: toNumber(item.likeCount),
+    recommendCount: toNumber(item.likeCount),
     cafeName: cleanCafeName(item.cafeName || "네이버 카페"),
     cafeId: item.cafeId,
     articleId: item.articleId,
@@ -550,6 +612,45 @@ function normalizeCafeArticle(item) {
     publishedAt: item.writeDateTimestamp
       ? new Date(Number(item.writeDateTimestamp)).toISOString()
       : new Date().toISOString(),
+    rankingBasis: `${range.label} 네이버 카페 공식 랭킹`,
+  };
+}
+
+function toPublicCafeTrendItem(item, index, range) {
+  const readCount = toNumber(item.readCount || item.viewCount);
+  const likeCount = toNumber(item.likeCount || item.recommendCount);
+  const sourceName = item.source || item.siteName || "카페";
+  const cafeName = item.cafeName || sourceName;
+
+  return {
+    rank: index + 1,
+    title: item.title,
+    content: `${range.label} · ${cafeName} · 조회 ${formatCountKo(readCount)} · 댓글 ${formatCountKo(
+      item.commentCount
+    )}${likeCount ? ` · 좋아요 ${formatCountKo(likeCount)}` : ""}`,
+    link: item.link,
+    img: item.firstImage || item.img || FALLBACK_IMAGES.naverCafe,
+    thumbnail: item.firstImage || item.thumbnail || item.img || FALLBACK_IMAGES.naverCafe,
+    source: cafeName,
+    siteName: sourceName,
+    boardName: item.boardName || range.label,
+    sources: uniqueCompact([sourceName, cafeName]),
+    sourceCount: 1,
+    publishedAt: item.publishedAt || new Date().toISOString(),
+    rankingBasis: item.rankingBasis || `${range.label} 카페 공식 인기글`,
+    sourceRank: item.sourceRank,
+    naverRank: item.naverRank,
+    daumRank: item.sourceKey === "daumCafeTop" ? item.sourceRank : undefined,
+    readCount,
+    viewCount: readCount,
+    commentCount: toNumber(item.commentCount),
+    likeCount,
+    recommendCount: likeCount,
+    cafeName,
+    cafeId: item.cafeId,
+    articleId: item.articleId,
+    daumCafeCode: item.daumCafeCode,
+    daumBoardId: item.daumBoardId,
   };
 }
 
@@ -569,7 +670,6 @@ function toPublicTrendItem(item, index, type, fallbackImage) {
     publishedAt: item.publishedAt || new Date().toISOString(),
     rankingBasis: item.rankingBasis || "공식 인기 목록 + 반응 지표",
     sourceRank: item.sourceRank,
-    trendScore: Math.round(item.trendScore || 0),
     viewCount: toNumber(item.viewCount),
     readCount: toNumber(item.viewCount),
     recommendCount: toNumber(item.recommendCount),
@@ -617,13 +717,51 @@ function buildCafeArticleUrl(item) {
   return url.toString();
 }
 
+function extractDaumCafeArticleIds(link) {
+  try {
+    const url = new URL(link);
+    const [daumCafeCode, daumBoardId, articleId] = url.pathname.split("/").filter(Boolean);
+    return {
+      daumCafeCode,
+      daumBoardId,
+      articleId,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function extractDaumCafeArticleMeta(html) {
+  const text = stripHtml(html);
+  const writeLabel = text.match(/작성시간\s*([^|]+?)\s*\|\s*조회수/)?.[1]?.trim() || "";
+  const viewCount = parseCount(text.match(/조회수\s*([\d,만천kK.]+)/)?.[1]);
+  const commentCount =
+    parseCount(text.match(/댓글\s*([\d,만천kK.]+)/)?.[1]) ||
+    parseCount(String(html || "").match(/commentCount:\s*["']?([\d,]+)/i)?.[1]);
+  const boardName = decodeEntities(
+    String(html || "").match(/boardName:\s*["']([^"']+)/i)?.[1] || ""
+  ).trim();
+
+  return {
+    viewCount,
+    readCount: viewCount,
+    commentCount,
+    publishedAt: writeLabel ? parseKoreanDate(writeLabel) : undefined,
+    boardName,
+  };
+}
+
 function compareCafeArticles(a, b) {
   return (
+    toNumber(b.trendScore) - toNumber(a.trendScore) ||
     normalizeRank(a.naverRank) - normalizeRank(b.naverRank) ||
+    normalizeRank(a.sourceRank) - normalizeRank(b.sourceRank) ||
     normalizeRank(a.rank) - normalizeRank(b.rank) ||
-    b.commentCount - a.commentCount ||
-    b.likeCount - a.likeCount ||
-    b.readCount - a.readCount ||
+    toNumber(b.commentCount) - toNumber(a.commentCount) ||
+    toNumber(b.likeCount) - toNumber(a.likeCount) ||
+    toNumber(b.recommendCount) - toNumber(a.recommendCount) ||
+    toNumber(b.readCount) - toNumber(a.readCount) ||
+    toNumber(b.viewCount) - toNumber(a.viewCount) ||
     Date.parse(b.publishedAt) - Date.parse(a.publishedAt)
   );
 }
@@ -687,29 +825,17 @@ function calculateTrendScore(item, type) {
   );
 }
 
-async function fetchNaverTvClock() {
-  const startedAt = Date.now();
-  const html = await fetchText(NAVER_TV_PAGE_URL, {
-    referer: NAVER_TV_PAGE_URL,
-  });
-  const nextDataText = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/)?.[1] || "";
-  const nextData = nextDataText ? JSON.parse(nextDataText) : {};
-  const serverTime = Number(nextData?.props?.serverTime) || Date.now();
-  return { serverTime, startedAt };
-}
+function calculateCafeTrendScore(item) {
+  const sourceRank = normalizeRank(item.sourceRank || item.naverRank);
+  const rankLimit = Math.max(SOURCE_ITEM_LIMIT, MAX_ITEMS, 20);
+  const rankScore = Math.max(0, rankLimit + 1 - sourceRank) * 10000;
+  const readCount = toNumber(item.readCount || item.viewCount);
+  const likeCount = toNumber(item.likeCount || item.recommendCount);
+  const commentCount = toNumber(item.commentCount);
+  const ageHours = ageInHours(item.publishedAt);
+  const recencyScore = Math.max(0, 24 - ageHours) * 650;
 
-function signNaverTvApiUrl(rawUrl, clock) {
-  const url = new URL(rawUrl);
-  const msgpad = String(clock.serverTime + (Date.now() - clock.startedAt));
-  const signatureTarget = `${url.toString().slice(0, 255)}${msgpad}`;
-  const md = crypto
-    .createHmac("sha1", NAVER_TV_API_SECRET)
-    .update(signatureTarget)
-    .digest("base64");
-
-  url.searchParams.set("msgpad", msgpad);
-  url.searchParams.set("md", md);
-  return url.toString();
+  return rankScore + readCount * 0.85 + likeCount * 230 + commentCount * 120 + recencyScore;
 }
 
 function basicBrowserHeaders() {
@@ -717,14 +843,6 @@ function basicBrowserHeaders() {
     "User-Agent": USER_AGENT,
     Accept: "application/json,text/plain,*/*",
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.6,en;q=0.5",
-  };
-}
-
-function naverTvHeaders() {
-  return {
-    ...basicBrowserHeaders(),
-    Origin: "https://tv.naver.com",
-    Referer: NAVER_TV_PAGE_URL,
   };
 }
 
@@ -832,6 +950,7 @@ function extractImageFromTag(html, baseUrl) {
 
 function isUsableArticleImage(value, options = {}) {
   if (!isHttpUrl(value)) return false;
+  if (/\$\{|%7b|%7d/i.test(value)) return false;
 
   try {
     const url = new URL(value);
@@ -843,14 +962,68 @@ function isUsableArticleImage(value, options = {}) {
       if (!allowed) return false;
     }
 
+    if (hostname.includes("nstatic.dcinside.com") && /\/(?:w|m)\/images\//i.test(path)) {
+      return false;
+    }
     if (/profile|avatar|emoticon|icon|sprite|blank|default|transparent|logo|loading/i.test(path)) {
       return false;
     }
+    if (/tit_gallery|btn_|sp_/i.test(path)) return false;
     if (/\.(svg|ico)(?:$|\?)/i.test(path)) return false;
     return true;
   } catch {
     return false;
   }
+}
+
+function needsEmbeddedImage(value) {
+  if (!isHttpUrl(value)) return false;
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname.includes("dcinside.co.kr") || hostname.includes("dcimg") || hostname.includes("dccdn");
+  } catch {
+    return false;
+  }
+}
+
+async function embedImageIfNeeded(imageUrl, item) {
+  if (!needsEmbeddedImage(imageUrl)) return imageUrl;
+
+  const response = await fetch(imageUrl, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.6,en;q=0.5",
+      Referer: item.link || item.sourceUrl || "https://gall.dcinside.com/",
+    },
+    signal: AbortSignal.timeout(ARTICLE_TIMEOUT_MS),
+  });
+
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length <= 0 || bytes.length > EMBED_IMAGE_MAX_BYTES) {
+    throw new Error(`image size ${bytes.length} bytes`);
+  }
+
+  const mimeType = detectImageMimeType(bytes, response.headers.get("content-type"));
+  if (!mimeType) throw new Error("unsupported image type");
+  return `data:${mimeType};base64,${bytes.toString("base64")}`;
+}
+
+function detectImageMimeType(bytes, contentType) {
+  const normalized = String(contentType || "").split(";")[0].trim().toLowerCase();
+  if (normalized.startsWith("image/")) return normalized;
+  if (bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return "image/png";
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.subarray(0, 6).toString("ascii") === "GIF87a" || bytes.subarray(0, 6).toString("ascii") === "GIF89a") {
+    return "image/gif";
+  }
+  if (bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP") {
+    return "image/webp";
+  }
+  return "";
 }
 
 function extractCellText(row, className) {
@@ -1028,7 +1201,9 @@ function stripHtml(value) {
 }
 
 function cleanCafeName(value) {
-  return stripHtml(value).replace(/^[`'"\u2018\u2019\u201c\u201d]+|[`'"\u2018\u2019\u201c\u201d]+$/g, "");
+  return stripHtml(value)
+    .replace(/^카페명\s*/i, "")
+    .replace(/^[`'"\u2018\u2019\u201c\u201d]+|[`'"\u2018\u2019\u201c\u201d]+$/g, "");
 }
 
 function decodeEntities(value) {
@@ -1055,6 +1230,14 @@ function isHttpUrl(value) {
   } catch {
     return false;
   }
+}
+
+function isDataImageUrl(value) {
+  return /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/]+=*$/i.test(String(value || ""));
+}
+
+function isDisplayableImage(value) {
+  return isHttpUrl(value) || isDataImageUrl(value);
 }
 
 function parseCount(value) {
@@ -1091,7 +1274,7 @@ function summarize(categoriesData) {
         key,
         {
           count: items.length,
-          images: items.filter((item) => isHttpUrl(item.img)).length,
+          images: items.filter((item) => isDisplayableImage(item.img)).length,
           maxViewCount: Math.max(...items.map((item) => item.viewCount || item.readCount || 0), 0),
           maxRecommendCount: Math.max(...items.map((item) => item.recommendCount || item.likeCount || 0), 0),
           sampleTitle: items[0]?.title || null,
