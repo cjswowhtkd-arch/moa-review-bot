@@ -422,10 +422,11 @@
         </nav>
 
         <nav id="feedFilterTabs" class="tab-wrapper filter-tabs" aria-label="세부 필터">
-            <button id="tab-daily" class="tab-btn active" data-feed="daily">실시간HOT</button>
-            <button id="tab-weekly" class="tab-btn" data-feed="weekly">주간TOP</button>
-            <button id="tab-monthly" class="tab-btn" data-feed="monthly">월간TOP</button>
-            <button id="tab-yearly" class="tab-btn" data-feed="yearly">연간TOP</button>
+            <button id="tab-mediaHot" class="tab-btn active" data-feed="mediaHot">라이브HOT</button>
+            <button id="tab-mediaReplay" class="tab-btn" data-feed="mediaReplay">다시보기</button>
+            <button id="tab-mediaGame" class="tab-btn" data-feed="mediaGame">게임</button>
+            <button id="tab-mediaTalk" class="tab-btn" data-feed="mediaTalk">토크방송</button>
+            <button id="tab-mediaMusic" class="tab-btn" data-feed="mediaMusic">음악라디오</button>
         </nav>
 
         <div class="summary-row">
@@ -461,6 +462,12 @@
                         source: "치지직,SOOP,트위치,유튜브 전체 시청자수"
                     },
                     {
+                        key: "mediaReplay",
+                        label: "다시보기",
+                        dataKeys: ["mediaReplay"],
+                        source: "유튜브·트위치 다시보기 조회수"
+                    },
+                    {
                         key: "mediaGame",
                         label: "게임",
                         dataKeys: ["mediaGame"],
@@ -487,38 +494,38 @@
                 feeds: [
                     { key: "daily", label: "실시간HOT", dataKeys: ["daily"], source: "네이버카페·다음카페 실시간 인기글" },
                     { key: "weekly", label: "주간TOP", dataKeys: ["weekly"], source: "네이버카페·다음카페 주간 TOP" },
-                    { key: "monthly", label: "월간TOP", dataKeys: ["monthly"], source: "네이버카페·다음카페 월간 TOP" },
-                    { key: "yearly", label: "연간TOP", dataKeys: ["yearly"], source: "네이버카페·다음카페 연간 TOP" }
+                    { key: "cafeTravel", label: "여행후기", dataKeys: ["cafeTravel"], source: "네이버카페·다음카페 여행 후기 인기글" },
+                    { key: "cafeFood", label: "맛집리뷰", dataKeys: ["cafeFood"], source: "네이버카페·다음카페 맛집 리뷰 인기글" }
                 ]
             },
             community: {
                 label: "커뮤니티 인기",
-                source: "디시인사이드 실베 카테고리별 랭킹",
-                empty: "디시인사이드 인기 데이터 연결 준비 중입니다.",
+                source: "디시·더쿠·루리웹·뽐뿌·인스티즈 통합 랭킹",
+                empty: "커뮤니티 인기 데이터 연결 준비 중입니다.",
                 feeds: [
                     {
                         key: "communityIssue",
                         label: "이슈",
                         dataKeys: ["communityIssue", "communityPopular", "community", "communities"],
-                        source: "디시 실베 이슈·사회 화제"
+                        source: "5개 커뮤니티 통합 이슈·사회 화제"
                     },
                     {
                         key: "communityHumor",
                         label: "유머",
                         dataKeys: ["communityHumor"],
-                        source: "디시 실베 유머·밈"
+                        source: "5개 커뮤니티 통합 유머·밈"
                     },
                     {
                         key: "communityEntertain",
                         label: "방송연예",
                         dataKeys: ["communityEntertain"],
-                        source: "디시 실베 방송·연예 화제"
+                        source: "5개 커뮤니티 통합 방송·연예 화제"
                     },
                     {
-                        key: "communityInfo",
-                        label: "정보후기",
-                        dataKeys: ["communityInfo"],
-                        source: "디시 실베 정보·후기 화제"
+                        key: "communityEvent",
+                        label: "이벤트정보",
+                        dataKeys: ["communityEvent"],
+                        source: "5개 커뮤니티 통합 이벤트·혜택 정보"
                     }
                 ]
             }
@@ -686,7 +693,15 @@
                     item.poster,
                     item.posterUrl
                 ),
-                meta: buildMeta(sectionKey, { source, viewerCount, viewCount, viewTime, recommendCount, commentCount })
+                meta: buildMeta(sectionKey, {
+                    source,
+                    viewerCount,
+                    viewCount,
+                    viewTime,
+                    recommendCount,
+                    commentCount,
+                    mediaCategory: firstText(item.mediaCategory, item.category)
+                })
             };
         }
 
@@ -741,8 +756,11 @@
         function buildMeta(sectionKey, values) {
             const parts = [];
             if (sectionKey === "mediaTrend") {
-                if (values.viewerCount > 0 || values.viewCount > 0) {
-                    parts.push(`시청자 ${formatCount(values.viewerCount || values.viewCount)}`);
+                const isReplay = values.mediaCategory === "replay" || /다시보기|VOD/i.test(values.viewTime || "");
+                if (!isReplay && values.viewerCount > 0) {
+                    parts.push(`시청자 ${formatCount(values.viewerCount)}`);
+                } else if (values.viewCount > 0) {
+                    parts.push(`조회 ${formatCount(values.viewCount)}`);
                 } else if (values.viewTime) {
                     parts.push(values.viewTime);
                 }
