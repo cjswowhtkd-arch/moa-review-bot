@@ -14,7 +14,7 @@ const DEFAULT_FIREBASE_DB_URL =
   "https://chosanghee00001-default-rtdb.firebaseio.com/categories.json";
 
 const MAX_ITEMS = toPositiveInt(process.env.MAX_ITEMS_PER_CATEGORY, 10);
-const SOURCE_ITEM_LIMIT = toPositiveInt(process.env.SOURCE_ITEM_LIMIT, 14);
+const SOURCE_ITEM_LIMIT = toPositiveInt(process.env.SOURCE_ITEM_LIMIT, 20);
 const HTTP_TIMEOUT_MS = toPositiveInt(process.env.HTTP_TIMEOUT_MS, 12000);
 const ARTICLE_TIMEOUT_MS = toPositiveInt(process.env.ARTICLE_TIMEOUT_MS, 9000);
 const ARTICLE_CONCURRENCY = toPositiveInt(process.env.ARTICLE_CONCURRENCY, 5);
@@ -27,8 +27,12 @@ const NAVER_CAFE_API_BASE =
   "https://apis.naver.com/cafe-home-web/cafe-home/v1/popular";
 const NAVER_CAFE_ARTICLE_API_BASE = "https://article.cafe.naver.com/gw/v4/cafes";
 const DAUM_CAFE_TOP_URL = "https://m.cafe.daum.net/";
-const YOUTUBE_CHARTS_API_URL = "https://charts.youtube.com/youtubei/v1/browse?alt=json";
-const YOUTUBE_CHARTS_PAGE_URL = "https://charts.youtube.com/charts/TrendingVideos/kr";
+const CHZZK_LIVES_API_URL = "https://api.chzzk.naver.com/service/v1/lives?size=20&sortType=POPULAR";
+const CHZZK_LIVE_PAGE_BASE = "https://chzzk.naver.com/live";
+const CHZZK_LIVE_EMBED_BASE = "https://chzzk.naver.com/embed/live";
+const SOOP_LIVES_API_URL =
+  "https://live.sooplive.co.kr/api/main_broad_list_api.php?selectType=action&selectValue=all&orderType=view_cnt&pageNo=1&lang=ko_KR";
+const SOOP_PLAY_PAGE_BASE = "https://play.sooplive.com";
 
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -244,10 +248,11 @@ async function fetchAggregateTrend({ key, label, type, sources, fallbackImage })
 }
 
 async function fetchMediaTrends() {
-  console.log("\n[미디어 트렌드] YouTube Charts 공식 랭킹 수집");
+  console.log("\n[미디어 트렌드] 치지직, SOOP 실시간 시청자수 랭킹 수집");
 
   const sourceFetchers = [
-    { label: "YouTube Charts 인기 급상승 음악", fetcher: fetchYoutubeChartsTrendingVideos },
+    { label: "치지직 LIVE", fetcher: fetchChzzkLiveRankings },
+    { label: "SOOP LIVE", fetcher: fetchSoopLiveRankings },
   ];
 
   const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
@@ -265,11 +270,13 @@ async function fetchMediaTrends() {
     .map((item) => ({
       ...item,
       type: "media",
-      trendScore: calculateTrendScore(item, "media"),
+      viewCount: toNumber(item.viewerCount || item.viewCount),
+      trendScore: calculateLiveTrendScore(item),
     }))
-    .sort(compareTrendItems);
+    .sort(compareLiveTrendItems);
 
-  const topItems = selectBalancedTopItems(rankedItems, MAX_ITEMS)
+  const topItems = rankedItems
+    .slice(0, MAX_ITEMS)
     .map((item, index) => toPublicTrendItem(item, index, "media", FALLBACK_IMAGES.mediaTrend));
 
   console.log(
@@ -281,70 +288,105 @@ async function fetchMediaTrends() {
   return topItems;
 }
 
-async function fetchYoutubeChartsTrendingVideos() {
-  const response = await fetchJsonWithHeaders(YOUTUBE_CHARTS_API_URL, {
-    method: "POST",
+async function fetchChzzkLiveRankings() {
+  const response = await fetchJsonWithHeaders(CHZZK_LIVES_API_URL, {
     headers: {
       ...basicBrowserHeaders(),
-      "Content-Type": "application/json",
-      Origin: "https://charts.youtube.com",
-      Referer: YOUTUBE_CHARTS_PAGE_URL,
+      Referer: "https://chzzk.naver.com/",
+      Origin: "https://chzzk.naver.com",
     },
-    body: JSON.stringify({
-      context: {
-        client: {
-          clientName: "WEB_MUSIC_ANALYTICS",
-          clientVersion: "2.0",
-          hl: "ko",
-          gl: "KR",
-          experimentIds: [],
-          experimentsToken: "",
-          theme: "MUSIC",
-        },
-        capabilities: {},
-        request: { internalExperimentFlags: [] },
-      },
-      browseId: "FEmusic_analytics_charts_home",
-      query:
-        "flags=MusicCharts__enable_apac_and_shorts_charts_expansion&perspective=CHART_DETAILS&chart_params_country_code=kr&chart_params_chart_type=TRENDING_VIDEOS",
-    }),
   });
+  const items = response?.content?.data || [];
 
-  const videoViews = [];
-  walk(response, (node) => {
-    if (Array.isArray(node?.videoViews)) videoViews.push(...node.videoViews);
-  });
-
-  return videoViews
-    .filter((item) => item?.id && item.title && item.isVisible !== false)
+  return items
+    .filter((item) => item?.liveId && item.liveTitle && !item.adult)
     .map((item, index) => {
-      const rank = toNumber(item.chartEntryMetadata?.currentPosition) || index + 1;
-      const artists = (item.artists || []).map((artist) => artist.name).filter(Boolean);
-      const channelName = item.channelName || artists.join(", ") || "YouTube";
+      const channel = item.channel || {};
+      const channelId = channel.channelId || item.channelId || "";
+      const thumbnail = normalizeChzzkThumbnail(
+        item.liveImageUrl || item.defaultThumbnailImageUrl || channel.channelImageUrl
+      );
 
       return {
-        sourceRank: rank,
-        title: stripHtml(item.title),
-        link: `https://www.youtube.com/watch?v=${item.id}`,
-        img: pickLargestThumbnail(item.thumbnail?.thumbnails),
-        thumbnail: pickLargestThumbnail(item.thumbnail?.thumbnails),
-        platformName: "YouTube Charts",
-        source: "YouTube Charts",
-        siteName: "YouTube",
-        boardName: "인기 급상승 음악",
-        sourceKey: "youtubeChartsTrendingVideos",
-        sourceUrl: YOUTUBE_CHARTS_PAGE_URL,
-        channelName,
-        viewCount: 0,
+        sourceRank: index + 1,
+        title: stripHtml(item.liveTitle),
+        link: channelId ? `${CHZZK_LIVE_PAGE_BASE}/${encodeURIComponent(channelId)}` : "https://chzzk.naver.com/",
+        previewUrl: channelId ? `${CHZZK_LIVE_EMBED_BASE}/${encodeURIComponent(channelId)}?autoplay=1&muted=1` : "",
+        img: thumbnail,
+        thumbnail,
+        platformName: "치지직",
+        source: "치지직",
+        siteName: "치지직",
+        boardName: item.liveCategoryValue || "LIVE",
+        sourceKey: "chzzkLive",
+        sourceUrl: "https://chzzk.naver.com/lives",
+        channelName: stripHtml(channel.channelName || "치지직"),
+        viewerCount: toNumber(item.concurrentUserCount),
+        viewCount: toNumber(item.concurrentUserCount),
+        concurrentUserCount: toNumber(item.concurrentUserCount),
         recommendCount: 0,
         commentCount: 0,
-        viewTime: secondsToDuration(item.videoDuration),
-        publishedLabel: secondsToDuration(item.videoDuration),
-        publishedAt: new Date().toISOString(),
-        releasedAt: youtubeReleaseDateToIso(item.releaseDate),
-        rankingBasis: "YouTube Charts 한국 인기 급상승 음악 공식 랭킹",
-        videoId: item.id,
-        artists,
+        viewTime: "LIVE",
+        publishedLabel: "LIVE",
+        publishedAt: parseKoreanDate(item.openDate),
+        openDate: item.openDate,
+        rankingBasis: "치지직 실시간 라이브 시청자수 랭킹",
+        liveId: item.liveId,
+        channelId,
+        tags: item.tags || [],
+      };
+    });
+}
+
+async function fetchSoopLiveRankings() {
+  const response = await fetchJsonWithHeaders(SOOP_LIVES_API_URL, {
+    headers: {
+      ...basicBrowserHeaders(),
+      Referer: "https://www.sooplive.co.kr/",
+      Origin: "https://www.sooplive.co.kr",
+    },
+  });
+  const items = response?.broad || [];
+
+  return items
+    .filter((item) => item?.broad_no && item.broad_title && item.is_password !== "Y" && item.broad_grade !== "19")
+    .map((item, index) => {
+      const viewerCount = toNumber(item.current_view_cnt || item.total_view_cnt || item.pc_view_cnt);
+      const thumbnail = normalizeImageUrl(item.broad_thumb, "https://live.sooplive.co.kr/");
+      const userId = item.user_id || "";
+      const broadNo = item.broad_no || "";
+      const playUrl =
+        userId && broadNo
+          ? `${SOOP_PLAY_PAGE_BASE}/${encodeURIComponent(userId)}/${encodeURIComponent(broadNo)}`
+          : "https://www.sooplive.co.kr/";
+
+      return {
+        sourceRank: index + 1,
+        title: stripHtml(item.broad_title),
+        link: playUrl,
+        previewUrl: userId && broadNo ? `${playUrl}/embed` : "",
+        img: thumbnail,
+        thumbnail,
+        platformName: "SOOP",
+        source: "SOOP",
+        siteName: "SOOP",
+        boardName: item.category_name || "LIVE",
+        sourceKey: "soopLive",
+        sourceUrl: "https://www.sooplive.co.kr/",
+        channelName: stripHtml(item.user_nick || item.station_name || userId || "SOOP"),
+        viewerCount,
+        viewCount: viewerCount,
+        concurrentUserCount: viewerCount,
+        recommendCount: 0,
+        commentCount: 0,
+        viewTime: "LIVE",
+        publishedLabel: "LIVE",
+        publishedAt: parseKoreanDate(item.broad_start),
+        openDate: item.broad_start,
+        rankingBasis: "SOOP 실시간 라이브 시청자수 랭킹",
+        liveId: broadNo,
+        channelId: userId,
+        tags: uniqueCompact([...(item.hash_tags || []), ...(item.category_tags || [])]),
       };
     });
 }
@@ -672,8 +714,11 @@ function toPublicTrendItem(item, index, type, fallbackImage) {
     sourceRank: item.sourceRank,
     viewCount: toNumber(item.viewCount),
     readCount: toNumber(item.viewCount),
+    viewerCount: toNumber(item.viewerCount || item.concurrentUserCount || item.viewCount),
+    concurrentUserCount: toNumber(item.concurrentUserCount || item.viewerCount || item.viewCount),
     recommendCount: toNumber(item.recommendCount),
     commentCount: toNumber(item.commentCount),
+    previewUrl: item.previewUrl || item.livePreviewUrl || item.embedUrl || "",
   };
 
   if (type === "community") {
@@ -691,6 +736,7 @@ function toPublicTrendItem(item, index, type, fallbackImage) {
     videoThumbnail: base.img,
     contentThumbnail: base.img,
     watchUrl: item.link,
+    previewUrl: base.previewUrl,
   };
 }
 
@@ -698,7 +744,11 @@ function buildContentSummary(item, type) {
   const parts = [];
   if (item.siteName || item.source) parts.push(item.siteName || item.source);
   if (item.boardName) parts.push(item.boardName);
-  if (item.viewCount > 0) parts.push(`조회 ${formatCountKo(item.viewCount)}`);
+  if (type === "media" && toNumber(item.viewerCount || item.viewCount) > 0) {
+    parts.push(`시청자 ${formatCountKo(item.viewerCount || item.viewCount)}`);
+  } else if (item.viewCount > 0) {
+    parts.push(`조회 ${formatCountKo(item.viewCount)}`);
+  }
   if (item.recommendCount > 0) parts.push(`추천 ${formatCountKo(item.recommendCount)}`);
   if (item.commentCount > 0) parts.push(`댓글 ${formatCountKo(item.commentCount)}`);
   return parts.join(" · ");
@@ -777,6 +827,14 @@ function compareTrendItems(a, b) {
   );
 }
 
+function compareLiveTrendItems(a, b) {
+  return (
+    toNumber(b.viewerCount || b.viewCount) - toNumber(a.viewerCount || a.viewCount) ||
+    normalizeRank(a.sourceRank) - normalizeRank(b.sourceRank) ||
+    Date.parse(a.publishedAt || 0) - Date.parse(b.publishedAt || 0)
+  );
+}
+
 function selectBalancedTopItems(items, maxItems) {
   const sources = uniqueCompact(items.map((item) => item.sourceKey));
   if (sources.length <= 1) return items.slice(0, maxItems);
@@ -823,6 +881,15 @@ function calculateTrendScore(item, type) {
     toNumber(item.commentCount) * commentWeight +
     recencyScore
   );
+}
+
+function calculateLiveTrendScore(item) {
+  const viewerCount = toNumber(item.viewerCount || item.viewCount);
+  const sourceRank = normalizeRank(item.sourceRank);
+  const rankScore = Math.max(0, SOURCE_ITEM_LIMIT + 1 - sourceRank) * 100;
+  const ageHours = ageInHours(item.publishedAt);
+  const liveFreshnessScore = Math.max(0, 12 - ageHours) * 20;
+  return viewerCount * 1000 + rankScore + liveFreshnessScore;
 }
 
 function calculateCafeTrendScore(item) {
@@ -1039,43 +1106,6 @@ function pickLargestThumbnail(thumbnails) {
   return best?.url || "";
 }
 
-function secondsToDuration(value) {
-  const seconds = toNumber(value);
-  if (seconds <= 0) return "";
-
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const remainSeconds = seconds % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainSeconds).padStart(2, "0")}`;
-  }
-  return `${minutes}:${String(remainSeconds).padStart(2, "0")}`;
-}
-
-function toIsoDate(value) {
-  const normalized = String(value || "").replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
-  const time = Date.parse(normalized);
-  return Number.isNaN(time) ? new Date().toISOString() : new Date(time).toISOString();
-}
-
-function youtubeReleaseDateToIso(value) {
-  const year = toNumber(value?.year);
-  const month = toNumber(value?.month);
-  const day = toNumber(value?.day);
-  if (!year || !month || !day) return new Date().toISOString();
-  return new Date(year, month - 1, day).toISOString();
-}
-
-function walk(node, visit) {
-  visit(node);
-  if (!node || typeof node !== "object") return;
-  if (Array.isArray(node)) {
-    node.forEach((item) => walk(item, visit));
-    return;
-  }
-  Object.values(node).forEach((value) => walk(value, visit));
-}
-
 function parseKoreanDate(value) {
   const text = stripHtml(value).replace(/<!--[\s\S]*?-->/g, "").trim();
   const now = new Date();
@@ -1141,6 +1171,12 @@ function normalizeImageUrl(value, baseUrl) {
     }
   }
   return "";
+}
+
+function normalizeChzzkThumbnail(value) {
+  const imageUrl = normalizeImageUrl(value, "https://chzzk.naver.com/");
+  if (!imageUrl) return "";
+  return imageUrl.replace(/\{type\}/g, "480");
 }
 
 function absolutizeUrl(value, baseUrl) {
