@@ -15,6 +15,8 @@ const DEFAULT_FIREBASE_DB_URL =
 
 const MAX_ITEMS = toPositiveInt(process.env.MAX_ITEMS_PER_CATEGORY, 10);
 const SOURCE_ITEM_LIMIT = toPositiveInt(process.env.SOURCE_ITEM_LIMIT, 20);
+const TWITCH_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.TWITCH_SOURCE_ITEM_LIMIT, 100);
+const TWITCH_MIN_ITEMS_PER_MEDIA_FEED = toPositiveInt(process.env.TWITCH_MIN_ITEMS_PER_MEDIA_FEED, 3);
 const HTTP_TIMEOUT_MS = toPositiveInt(process.env.HTTP_TIMEOUT_MS, 12000);
 const ARTICLE_TIMEOUT_MS = toPositiveInt(process.env.ARTICLE_TIMEOUT_MS, 9000);
 const ARTICLE_CONCURRENCY = toPositiveInt(process.env.ARTICLE_CONCURRENCY, 5);
@@ -321,14 +323,14 @@ async function fetchMediaTrendBuckets() {
   const sourceFetchers = [
     { label: "치지직 LIVE", fetcher: fetchChzzkLiveRankings },
     { label: "SOOP LIVE", fetcher: fetchSoopLiveRankings },
-    { label: "Twitch LIVE", fetcher: fetchTwitchLiveRankings },
+    { label: "Twitch LIVE", fetcher: fetchTwitchLiveRankings, limit: TWITCH_SOURCE_ITEM_LIMIT },
   ];
 
   const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
     try {
       const items = await source.fetcher();
       console.log(`  - ${source.label}: ${items.length}개`);
-      return items.slice(0, SOURCE_ITEM_LIMIT);
+      return items.slice(0, source.limit || SOURCE_ITEM_LIMIT);
     } catch (error) {
       console.warn(`  - ${source.label} 수집 실패: ${error.message}`);
       return [];
@@ -1381,18 +1383,46 @@ function classifyMediaCategory(item) {
 }
 
 function selectMediaTopItems(items) {
-  const selected = items.slice(0, MAX_ITEMS);
-  const twitch = items.find((item) => item.source === "트위치" || item.platformName === "트위치");
+  const sortedItems = items.slice().sort(compareLiveTrendItems);
+  const selected = sortedItems.slice(0, MAX_ITEMS);
+  const twitchItems = sortedItems.filter(isTwitchItem).slice(0, Math.min(TWITCH_MIN_ITEMS_PER_MEDIA_FEED, MAX_ITEMS));
 
-  if (twitch && !selected.some((item) => item.source === "트위치" || item.platformName === "트위치")) {
-    if (selected.length >= MAX_ITEMS) {
-      selected[selected.length - 1] = twitch;
-    } else {
+  for (const twitch of twitchItems) {
+    if (selected.some((item) => normalizeDedupeKey(item) === normalizeDedupeKey(twitch))) continue;
+
+    if (selected.length < MAX_ITEMS) {
       selected.push(twitch);
+      continue;
     }
+
+    const replaceIndex = findLastNonTwitchIndex(selected);
+    if (replaceIndex >= 0) selected[replaceIndex] = twitch;
   }
 
   return dedupeItems(selected).sort(compareLiveTrendItems).slice(0, MAX_ITEMS);
+}
+
+function findLastNonTwitchIndex(items) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (!isTwitchItem(items[index])) return index;
+  }
+  return -1;
+}
+
+function isTwitchItem(item) {
+  const values = [
+    item.source,
+    item.platformName,
+    item.siteName,
+    item.sourceKey,
+    item.link,
+    item.sourceUrl,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return values.includes("트위치") || values.includes("twitch");
 }
 
 function absolutizeUrl(value, baseUrl) {
