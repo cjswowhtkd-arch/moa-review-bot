@@ -354,9 +354,9 @@
         </section>
 
         <nav class="main-tab-wrapper" aria-label="메인 카테고리">
-            <button class="main-tab-btn active" data-section="naverCafe">네이버 카페</button>
+            <button class="main-tab-btn active" data-section="mediaTrend">미디어 트렌드</button>
+            <button class="main-tab-btn" data-section="naverCafe">카페 인기글</button>
             <button class="main-tab-btn" data-section="community">커뮤니티 인기</button>
-            <button class="main-tab-btn" data-section="mediaTrend">미디어 트렌드</button>
         </nav>
 
         <nav id="feedFilterTabs" class="tab-wrapper filter-tabs" aria-label="세부 필터">
@@ -366,7 +366,7 @@
 
         <div class="summary-row">
             <span id="activeSummary">실시간HOT TOP 10</span>
-            <span id="activeSource">네이버 카페 공식 랭킹</span>
+            <span id="activeSource">YouTube Charts 공식 랭킹</span>
         </div>
 
         <section class="grid-container" id="cardGrid">
@@ -385,48 +385,48 @@
         };
 
         const sections = {
-            naverCafe: {
-                label: "네이버 카페",
-                source: "네이버 카페 공식 랭킹",
-                empty: "네이버 카페 인기글 데이터가 비어있습니다.",
-                feeds: [
-                    { key: "daily", label: "실시간HOT", dataKeys: ["daily"], source: "네이버 카페 실시간HOT" },
-                    { key: "weekly", label: "주간TOP", dataKeys: ["weekly"], source: "네이버 카페 주간TOP" }
-                ]
-            },
-            community: {
-                label: "커뮤니티 인기",
-                source: "커뮤니티 통합 인기글",
-                empty: "커뮤니티 인기 데이터 연결 준비 중입니다.",
-                feeds: [
-                    {
-                        key: "communityPopular",
-                        label: "커뮤니티 인기",
-                        dataKeys: ["communityPopular", "community", "communities"],
-                        source: "디시·에펨 등 통합 인기글"
-                    }
-                ]
-            },
             mediaTrend: {
                 label: "미디어 트렌드",
-                source: "네이버TV·YouTube 공식 랭킹",
+                source: "YouTube Charts 공식 랭킹",
                 empty: "미디어 트렌드 데이터 연결 준비 중입니다.",
                 feeds: [
                     {
                         key: "mediaTrends",
                         label: "미디어 트렌드",
-                        dataKeys: ["mediaTrends", "mediaTrend", "media", "youtubeTrends", "ottTrends"],
-                        source: "네이버TV·YouTube 공식 랭킹"
+                        dataKeys: ["mediaTrends", "mediaTrend", "media", "youtubeTrends"],
+                        source: "YouTube Charts 공식 랭킹"
+                    }
+                ]
+            },
+            naverCafe: {
+                label: "카페 인기글",
+                source: "네이버카페·다음카페 통합 랭킹",
+                empty: "카페 인기글 데이터가 비어있습니다.",
+                feeds: [
+                    { key: "daily", label: "실시간HOT", dataKeys: ["daily"], source: "네이버카페·다음카페 실시간 인기글" },
+                    { key: "weekly", label: "주간TOP", dataKeys: ["weekly"], source: "네이버 카페 주간TOP" }
+                ]
+            },
+            community: {
+                label: "커뮤니티 인기",
+                source: "디시인사이드 실베",
+                empty: "디시인사이드 인기 데이터 연결 준비 중입니다.",
+                feeds: [
+                    {
+                        key: "communityPopular",
+                        label: "커뮤니티 인기",
+                        dataKeys: ["communityPopular", "community", "communities"],
+                        source: "디시인사이드 실베"
                     }
                 ]
             }
         };
 
-        let activeSection = "naverCafe";
+        let activeSection = "mediaTrend";
         let activeFeedBySection = {
+            mediaTrend: "mediaTrends",
             naverCafe: "daily",
-            community: "communityPopular",
-            mediaTrend: "mediaTrends"
+            community: "communityPopular"
         };
         let rawDataStore = {};
 
@@ -640,7 +640,7 @@
         }
 
         function getActiveSection() {
-            return sections[activeSection] || sections.naverCafe;
+            return sections[activeSection] || sections.mediaTrend;
         }
 
         function getActiveFeed() {
@@ -677,8 +677,13 @@
         }
 
         function safeUrl(value) {
+            const raw = String(value || "").trim();
+            if (/^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/]+=*$/i.test(raw)) {
+                return raw;
+            }
+
             try {
-                const url = new URL(value);
+                const url = new URL(raw);
                 return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
             } catch {
                 return "";
