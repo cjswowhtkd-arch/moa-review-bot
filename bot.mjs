@@ -32,6 +32,71 @@ const CHZZK_LIVE_PAGE_BASE = "https://chzzk.naver.com/live";
 const SOOP_LIVES_API_URL =
   "https://live.sooplive.co.kr/api/main_broad_list_api.php?selectType=action&selectValue=all&orderType=view_cnt&pageNo=1&lang=ko_KR";
 const SOOP_PLAY_PAGE_BASE = "https://play.sooplive.com";
+const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token";
+const TWITCH_STREAMS_API_URL = "https://api.twitch.tv/helix/streams";
+const TWITCH_PAGE_BASE = "https://www.twitch.tv";
+
+const MEDIA_FEEDS = [
+  { key: "mediaChat", label: "채팅", category: "chat" },
+  { key: "mediaGame", label: "게임", category: "game" },
+  { key: "mediaMusic", label: "음악", category: "music" },
+];
+
+const MEDIA_CATEGORY_RULES = {
+  music: [
+    "음악",
+    "노래",
+    "뮤직",
+    "music",
+    "singing",
+    "karaoke",
+    "cover",
+    "concert",
+    "dj",
+    "버스킹",
+    "피아노",
+    "기타",
+  ],
+  game: [
+    "game",
+    "게임",
+    "스타크래프트",
+    "리그 오브 레전드",
+    "league of legends",
+    "lol",
+    "발로란트",
+    "valorant",
+    "배틀그라운드",
+    "pubg",
+    "마인크래프트",
+    "minecraft",
+    "메이플",
+    "로스트아크",
+    "오버워치",
+    "피파",
+    "fc online",
+    "이터널 리턴",
+    "서든",
+    "fps",
+    "rpg",
+    "스팀",
+  ],
+  chat: [
+    "just chatting",
+    "talk",
+    "토크",
+    "캠방",
+    "소통",
+    "먹방",
+    "일상",
+    "보이는라디오",
+    "라디오",
+    "잡담",
+    "버튜버",
+    "주식",
+    "뉴스",
+  ],
+};
 
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -92,7 +157,11 @@ async function startRobot() {
     fallbackImage: FALLBACK_IMAGES.community,
   });
 
-  categoriesData.mediaTrends = await fetchMediaTrends();
+  const mediaBuckets = await fetchMediaTrendBuckets();
+  for (const feed of MEDIA_FEEDS) {
+    categoriesData[feed.key] = mediaBuckets[feed.key] || [];
+  }
+  categoriesData.mediaTrends = categoriesData.mediaChat || [];
 
   categoriesData.updatedAt = new Date().toISOString();
 
@@ -246,12 +315,13 @@ async function fetchAggregateTrend({ key, label, type, sources, fallbackImage })
   return topItems;
 }
 
-async function fetchMediaTrends() {
-  console.log("\n[미디어 트렌드] 치지직, SOOP 실시간 시청자수 랭킹 수집");
+async function fetchMediaTrendBuckets() {
+  console.log("\n[미디어 트렌드] 치지직, SOOP, 트위치 실시간 시청자수 랭킹 수집");
 
   const sourceFetchers = [
     { label: "치지직 LIVE", fetcher: fetchChzzkLiveRankings },
     { label: "SOOP LIVE", fetcher: fetchSoopLiveRankings },
+    { label: "Twitch LIVE", fetcher: fetchTwitchLiveRankings },
   ];
 
   const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
@@ -269,22 +339,33 @@ async function fetchMediaTrends() {
     .map((item) => ({
       ...item,
       type: "media",
+      mediaCategory: classifyMediaCategory(item),
       viewCount: toNumber(item.viewerCount || item.viewCount),
       trendScore: calculateLiveTrendScore(item),
     }))
     .sort(compareLiveTrendItems);
 
-  const topItems = rankedItems
-    .slice(0, MAX_ITEMS)
-    .map((item, index) => toPublicTrendItem(item, index, "media", FALLBACK_IMAGES.mediaTrend));
+  const buckets = {};
+  for (const feed of MEDIA_FEEDS) {
+    const topItems = rankedItems
+      .filter((item) => item.mediaCategory === feed.category)
+      .slice(0, MAX_ITEMS)
+      .map((item, index) => toPublicTrendItem(item, index, "media", FALLBACK_IMAGES.mediaTrend));
 
-  console.log(
-    `  - 통합 후보 ${rankedItems.length}개, 이미지 ${
-      topItems.filter((item) => isDisplayableImage(item.img)).length
-    }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
-  );
+    buckets[feed.key] = topItems;
+    console.log(
+      `  - ${feed.label}: 후보 ${rankedItems.filter((item) => item.mediaCategory === feed.category).length}개, 이미지 ${
+        topItems.filter((item) => isDisplayableImage(item.img)).length
+      }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
+    );
+  }
 
-  return topItems;
+  return buckets;
+}
+
+async function fetchMediaTrends() {
+  const buckets = await fetchMediaTrendBuckets();
+  return buckets.mediaChat || [];
 }
 
 async function fetchChzzkLiveRankings() {
@@ -390,6 +471,86 @@ async function fetchSoopLiveRankings() {
         tags: uniqueCompact([...(item.hash_tags || []), ...(item.category_tags || [])]),
       };
     });
+}
+
+async function fetchTwitchLiveRankings() {
+  const clientId = process.env.TWITCH_CLIENT_ID || "";
+  const clientSecret = process.env.TWITCH_CLIENT_SECRET || "";
+  if (!clientId || !clientSecret) {
+    console.warn("  - Twitch API 키가 없어 건너뜁니다. TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET을 .env에 넣으면 활성화됩니다.");
+    return [];
+  }
+
+  const token = await fetchTwitchAppAccessToken(clientId, clientSecret);
+  const url = new URL(TWITCH_STREAMS_API_URL);
+  url.searchParams.set("first", String(Math.min(100, Math.max(SOURCE_ITEM_LIMIT * 3, 30))));
+  url.searchParams.set("language", "ko");
+
+  const response = await fetchJsonWithHeaders(url.toString(), {
+    headers: {
+      ...basicBrowserHeaders(),
+      "Client-Id": clientId,
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  return (response?.data || [])
+    .filter((item) => item?.id && item.user_login && item.title)
+    .map((item, index) => {
+      const thumbnail = normalizeTwitchThumbnail(item.thumbnail_url);
+      const viewerCount = toNumber(item.viewer_count);
+
+      return {
+        sourceRank: index + 1,
+        title: stripHtml(item.title),
+        link: `${TWITCH_PAGE_BASE}/${encodeURIComponent(item.user_login)}`,
+        previewUrl: "",
+        previewType: "image",
+        img: thumbnail,
+        thumbnail,
+        platformName: "트위치",
+        source: "트위치",
+        siteName: "트위치",
+        boardName: item.game_name || "LIVE",
+        sourceKey: "twitchLive",
+        sourceUrl: "https://www.twitch.tv/directory",
+        channelName: stripHtml(item.user_name || item.user_login || "Twitch"),
+        viewerCount,
+        viewCount: viewerCount,
+        concurrentUserCount: viewerCount,
+        recommendCount: 0,
+        commentCount: 0,
+        viewTime: "LIVE",
+        publishedLabel: "LIVE",
+        publishedAt: item.started_at || new Date().toISOString(),
+        openDate: item.started_at || "",
+        rankingBasis: "Twitch 공식 Helix Streams API 시청자수 랭킹",
+        liveId: item.id,
+        channelId: item.user_id || item.user_login,
+        tags: uniqueCompact([item.game_name, ...(item.tags || [])]),
+      };
+    });
+}
+
+async function fetchTwitchAppAccessToken(clientId, clientSecret) {
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: "client_credentials",
+  });
+
+  const response = await fetchJsonWithHeaders(TWITCH_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "User-Agent": USER_AGENT,
+      "Accept": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+
+  if (!response?.access_token) throw new Error("Twitch app access token 발급 실패");
+  return response.access_token;
 }
 
 async function enrichCafeArticle(item) {
@@ -721,6 +882,7 @@ function toPublicTrendItem(item, index, type, fallbackImage) {
     commentCount: toNumber(item.commentCount),
     previewUrl: item.previewUrl || item.livePreviewUrl || item.embedUrl || "",
     previewType: item.previewType || item.previewKind || "",
+    mediaCategory: item.mediaCategory || classifyMediaCategory(item),
   };
 
   if (type === "community") {
@@ -1180,6 +1342,43 @@ function normalizeChzzkThumbnail(value) {
   const imageUrl = normalizeImageUrl(value, "https://chzzk.naver.com/");
   if (!imageUrl) return "";
   return imageUrl.replace(/\{type\}/g, "480");
+}
+
+function normalizeTwitchThumbnail(value) {
+  const imageUrl = normalizeImageUrl(value, "https://www.twitch.tv/");
+  if (!imageUrl) return "";
+  return imageUrl.replace(/\{width\}/g, "640").replace(/\{height\}/g, "360");
+}
+
+function classifyMediaCategory(item) {
+  const sourceText = [
+    item.mediaCategory,
+    item.boardName,
+    item.categoryName,
+    item.liveCategoryValue,
+    item.gameName,
+    item.title,
+    item.channelName,
+    ...(Array.isArray(item.tags) ? item.tags : []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  for (const keyword of MEDIA_CATEGORY_RULES.music) {
+    if (sourceText.includes(keyword.toLowerCase())) return "music";
+  }
+
+  if (item.sourceKey === "chzzkLive" && String(item.boardName || "").toUpperCase() === "GAME") return "game";
+  for (const keyword of MEDIA_CATEGORY_RULES.game) {
+    if (sourceText.includes(keyword.toLowerCase())) return "game";
+  }
+
+  for (const keyword of MEDIA_CATEGORY_RULES.chat) {
+    if (sourceText.includes(keyword.toLowerCase())) return "chat";
+  }
+
+  return "chat";
 }
 
 function absolutizeUrl(value, baseUrl) {
