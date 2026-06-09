@@ -2,7 +2,7 @@ name: OTT 및 제품 실시간 수집 봇
 
 on:
   schedule:
-    - cron: '0 18 * * *'
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 jobs:
