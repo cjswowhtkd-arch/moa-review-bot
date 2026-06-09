@@ -17,6 +17,8 @@ const MAX_ITEMS = toPositiveInt(process.env.MAX_ITEMS_PER_CATEGORY, 10);
 const SOURCE_ITEM_LIMIT = toPositiveInt(process.env.SOURCE_ITEM_LIMIT, 20);
 const TWITCH_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.TWITCH_SOURCE_ITEM_LIMIT, 100);
 const TWITCH_MIN_ITEMS_PER_MEDIA_FEED = toPositiveInt(process.env.TWITCH_MIN_ITEMS_PER_MEDIA_FEED, 3);
+const YOUTUBE_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.YOUTUBE_SOURCE_ITEM_LIMIT, 50);
+const YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED = toPositiveInt(process.env.YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED, 2);
 const HTTP_TIMEOUT_MS = toPositiveInt(process.env.HTTP_TIMEOUT_MS, 12000);
 const ARTICLE_TIMEOUT_MS = toPositiveInt(process.env.ARTICLE_TIMEOUT_MS, 9000);
 const ARTICLE_CONCURRENCY = toPositiveInt(process.env.ARTICLE_CONCURRENCY, 5);
@@ -37,6 +39,9 @@ const SOOP_PLAY_PAGE_BASE = "https://play.sooplive.com";
 const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token";
 const TWITCH_STREAMS_API_URL = "https://api.twitch.tv/helix/streams";
 const TWITCH_PAGE_BASE = "https://www.twitch.tv";
+const YOUTUBE_SEARCH_API_URL = "https://www.googleapis.com/youtube/v3/search";
+const YOUTUBE_VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos";
+const YOUTUBE_WATCH_BASE = "https://www.youtube.com/watch";
 
 const MEDIA_FEEDS = [
   { key: "mediaChat", label: "채팅", category: "chat" },
@@ -97,6 +102,8 @@ const MEDIA_CATEGORY_RULES = {
     "버튜버",
     "주식",
     "뉴스",
+    "youtube",
+    "유튜브",
   ],
 };
 
@@ -324,6 +331,7 @@ async function fetchMediaTrendBuckets() {
     { label: "치지직 LIVE", fetcher: fetchChzzkLiveRankings },
     { label: "SOOP LIVE", fetcher: fetchSoopLiveRankings },
     { label: "Twitch LIVE", fetcher: fetchTwitchLiveRankings, limit: TWITCH_SOURCE_ITEM_LIMIT },
+    { label: "YouTube LIVE", fetcher: fetchYoutubeLiveRankings, limit: YOUTUBE_SOURCE_ITEM_LIMIT },
   ];
 
   const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
@@ -552,6 +560,84 @@ async function fetchTwitchAppAccessToken(clientId, clientSecret) {
 
   if (!response?.access_token) throw new Error("Twitch app access token 발급 실패");
   return response.access_token;
+}
+
+async function fetchYoutubeLiveRankings() {
+  const apiKey = process.env.YOUTUBE_API_KEY || "";
+  if (!apiKey) {
+    console.warn("  - YouTube API 키가 없어 건너뜁니다. YOUTUBE_API_KEY를 .env에 넣으면 활성화됩니다.");
+    return [];
+  }
+
+  const searchUrl = new URL(YOUTUBE_SEARCH_API_URL);
+  searchUrl.searchParams.set("part", "snippet");
+  searchUrl.searchParams.set("type", "video");
+  searchUrl.searchParams.set("eventType", "live");
+  searchUrl.searchParams.set("order", "viewCount");
+  searchUrl.searchParams.set("regionCode", "KR");
+  searchUrl.searchParams.set("relevanceLanguage", "ko");
+  searchUrl.searchParams.set("maxResults", String(Math.min(50, Math.max(YOUTUBE_SOURCE_ITEM_LIMIT, 10))));
+  searchUrl.searchParams.set("key", apiKey);
+
+  const searchResponse = await fetchJsonWithHeaders(searchUrl.toString());
+  const videoIds = uniqueCompact((searchResponse?.items || []).map((item) => item?.id?.videoId));
+  if (videoIds.length === 0) return [];
+
+  const videosUrl = new URL(YOUTUBE_VIDEOS_API_URL);
+  videosUrl.searchParams.set("part", "snippet,liveStreamingDetails,statistics");
+  videosUrl.searchParams.set("id", videoIds.join(","));
+  videosUrl.searchParams.set("key", apiKey);
+
+  const videosResponse = await fetchJsonWithHeaders(videosUrl.toString());
+  const videoMap = new Map((videosResponse?.items || []).map((item) => [item.id, item]));
+
+  return videoIds
+    .map((videoId, index) => {
+      const item = videoMap.get(videoId);
+      if (!item?.id || item.snippet?.liveBroadcastContent !== "live") return null;
+
+      const snippet = item.snippet || {};
+      const viewerCount = toNumber(item.liveStreamingDetails?.concurrentViewers || item.statistics?.viewCount);
+      const thumbnail =
+        snippet.thumbnails?.maxres?.url ||
+        snippet.thumbnails?.high?.url ||
+        snippet.thumbnails?.medium?.url ||
+        snippet.thumbnails?.default?.url ||
+        "";
+      const watchUrl = new URL(YOUTUBE_WATCH_BASE);
+      watchUrl.searchParams.set("v", item.id);
+
+      return {
+        sourceRank: index + 1,
+        title: stripHtml(snippet.title),
+        link: watchUrl.toString(),
+        previewUrl: "",
+        previewType: "image",
+        img: normalizeImageUrl(thumbnail, "https://www.youtube.com/"),
+        thumbnail: normalizeImageUrl(thumbnail, "https://www.youtube.com/"),
+        platformName: "유튜브",
+        source: "유튜브",
+        siteName: "유튜브",
+        boardName: snippet.categoryId || "LIVE",
+        sourceKey: "youtubeLive",
+        sourceUrl: "https://www.youtube.com/live",
+        channelName: stripHtml(snippet.channelTitle || "YouTube"),
+        viewerCount,
+        viewCount: viewerCount,
+        concurrentUserCount: viewerCount,
+        recommendCount: 0,
+        commentCount: 0,
+        viewTime: "LIVE",
+        publishedLabel: "LIVE",
+        publishedAt: snippet.publishedAt || item.liveStreamingDetails?.actualStartTime || new Date().toISOString(),
+        openDate: item.liveStreamingDetails?.actualStartTime || snippet.publishedAt || "",
+        rankingBasis: "YouTube Data API liveStreamingDetails 동시 시청자수 랭킹",
+        liveId: item.id,
+        channelId: snippet.channelId || "",
+        tags: uniqueCompact([snippet.categoryId, snippet.channelTitle]),
+      };
+    })
+    .filter(Boolean);
 }
 
 async function enrichCafeArticle(item) {
@@ -1386,25 +1472,35 @@ function selectMediaTopItems(items) {
   const sortedItems = items.slice().sort(compareLiveTrendItems);
   const selected = sortedItems.slice(0, MAX_ITEMS);
   const twitchItems = sortedItems.filter(isTwitchItem).slice(0, Math.min(TWITCH_MIN_ITEMS_PER_MEDIA_FEED, MAX_ITEMS));
+  const youtubeItems = sortedItems.filter(isYoutubeItem).slice(0, Math.min(YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED, MAX_ITEMS));
 
   for (const twitch of twitchItems) {
-    if (selected.some((item) => normalizeDedupeKey(item) === normalizeDedupeKey(twitch))) continue;
+    ensureMediaPlatformItem(selected, twitch, (item) => !isTwitchItem(item) && !isYoutubeItem(item));
+  }
 
-    if (selected.length < MAX_ITEMS) {
-      selected.push(twitch);
-      continue;
-    }
-
-    const replaceIndex = findLastNonTwitchIndex(selected);
-    if (replaceIndex >= 0) selected[replaceIndex] = twitch;
+  for (const youtube of youtubeItems) {
+    ensureMediaPlatformItem(selected, youtube, (item) => !isYoutubeItem(item) && !isTwitchItem(item));
   }
 
   return dedupeItems(selected).sort(compareLiveTrendItems).slice(0, MAX_ITEMS);
 }
 
-function findLastNonTwitchIndex(items) {
+function ensureMediaPlatformItem(selected, platformItem, canReplace) {
+  if (selected.some((item) => normalizeDedupeKey(item) === normalizeDedupeKey(platformItem))) return;
+
+  if (selected.length < MAX_ITEMS) {
+    selected.push(platformItem);
+    return;
+  }
+
+  let replaceIndex = findLastReplaceableIndex(selected, canReplace);
+  if (replaceIndex < 0) replaceIndex = selected.length - 1;
+  selected[replaceIndex] = platformItem;
+}
+
+function findLastReplaceableIndex(items, predicate) {
   for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (!isTwitchItem(items[index])) return index;
+    if (predicate(items[index])) return index;
   }
   return -1;
 }
@@ -1423,6 +1519,22 @@ function isTwitchItem(item) {
     .toLowerCase();
 
   return values.includes("트위치") || values.includes("twitch");
+}
+
+function isYoutubeItem(item) {
+  const values = [
+    item.source,
+    item.platformName,
+    item.siteName,
+    item.sourceKey,
+    item.link,
+    item.sourceUrl,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return values.includes("유튜브") || values.includes("youtube") || values.includes("youtu.be");
 }
 
 function absolutizeUrl(value, baseUrl) {
