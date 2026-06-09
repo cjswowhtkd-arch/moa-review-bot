@@ -103,6 +103,12 @@ const SECOND_THUMBNAIL_CAFE_KEYWORDS = [
   "subdued20club",
   "ssaumjil",
 ];
+const SECOND_THUMBNAIL_COMMUNITY_KEYWORDS = [
+  "루리웹",
+  "ruliweb",
+  "인스티즈",
+  "instiz",
+];
 
 const MEDIA_FEEDS = [
   { key: "mediaHot", label: "라이브HOT", category: "all" },
@@ -235,6 +241,17 @@ const CAFE_RANGES = [
     filterCategory: "food",
     minDaumItems: 1,
   },
+  {
+    key: "cafeOutfit",
+    label: "오늘의 코디",
+    endpoints: ["realtime", "weekly"],
+    description: "네이버 카페와 다음 카페 인기글 후보 중 오늘의 코디·패션 반응이 높은 글입니다.",
+    includeDaum: true,
+    sourceLimit: 220,
+    scoreMode: "weekly",
+    filterCategory: "outfit",
+    minDaumItems: 1,
+  },
 ];
 
 const CAFE_CATEGORY_RULES = {
@@ -297,7 +314,95 @@ const CAFE_CATEGORY_RULES = {
     "메뉴",
     "런치",
   ],
+  outfit: [
+    "오늘의코디",
+    "오늘코디",
+    "오코",
+    "코디",
+    "데일리룩",
+    "데일리",
+    "ootd",
+    "오오티디",
+    "착샷",
+    "착장",
+    "룩",
+    "출근룩",
+    "하객룩",
+    "여름코디",
+    "패션",
+    "옷",
+    "옷차림",
+    "스타일",
+    "스타일링",
+    "원피스",
+    "셔츠",
+    "블라우스",
+    "자켓",
+    "재킷",
+    "바지",
+    "청바지",
+    "스커트",
+    "슬랙스",
+    "운동화",
+    "신발",
+    "가방",
+    "모자",
+  ],
 };
+
+const CAFE_OUTFIT_STRONG_TITLE_KEYWORDS = [
+  "오늘의코디",
+  "오늘코디",
+  "오코",
+  "코디",
+  "데일리룩",
+  "ootd",
+  "오오티디",
+  "착샷",
+  "착장",
+  "출근룩",
+  "하객룩",
+  "여름코디",
+  "옷차림",
+  "스타일링",
+];
+
+const CAFE_OUTFIT_WEAK_TITLE_KEYWORDS = [
+  "패션",
+  "옷",
+  "룩",
+  "데일리",
+  "스타일",
+  "원피스",
+  "셔츠",
+  "블라우스",
+  "자켓",
+  "재킷",
+  "바지",
+  "청바지",
+  "스커트",
+  "슬랙스",
+  "운동복",
+  "운동화",
+  "신발",
+  "가방",
+  "모자",
+  "착용",
+];
+
+const CAFE_OUTFIT_SOURCE_KEYWORDS = [
+  "디젤매니아",
+  "dmain",
+  "브랜디드",
+  "고아캐드",
+  "패션",
+  "옷",
+  "코디",
+  "스타일",
+  "데일리룩",
+  "운동화",
+  "신발",
+];
 
 const COMMUNITY_SOURCES = [
   {
@@ -1526,14 +1631,18 @@ async function enrichExternalArticleImage(item, fallbackImage) {
 async function fetchExternalFirstImage(item) {
   if (!isHttpUrl(item.link)) return "";
 
-  const cacheKey = `external:${item.link}`;
+  const imageIndex = getExternalThumbnailImageIndex(item);
+  const cacheKey = `external:${imageIndex}:${item.link}`;
   if (articleImageCache.has(cacheKey)) return articleImageCache.get(cacheKey);
 
   const html = await fetchText(item.link, {
     timeoutMs: ARTICLE_TIMEOUT_MS,
     referer: item.sourceUrl || item.link,
   });
-  const firstImage = extractFirstImageFromHtml(html, { baseUrl: item.link });
+  const firstImage = extractFirstImageFromHtml(html, {
+    baseUrl: item.link,
+    imageIndex,
+  });
 
   articleImageCache.set(cacheKey, firstImage);
   return firstImage;
@@ -2008,6 +2117,7 @@ function filterCafeArticlesByCategory(items, category) {
 function matchesCafeCategory(item, category) {
   const keywords = CAFE_CATEGORY_RULES[category] || [];
   if (keywords.length === 0) return true;
+  if (category === "outfit") return cafeOutfitScore(item) > 0;
   const text = getCafeCategoryText(item);
   const titleText = normalizeCompactText(item.title);
   return keywords.some((keyword) => {
@@ -2018,6 +2128,11 @@ function matchesCafeCategory(item, category) {
 }
 
 function cafeCategoryScore(item, category) {
+  if (category === "outfit") {
+    const sourceScore = Math.max(0, 120 - normalizeRank(item.sourceRank || item.naverRank)) / 20;
+    return cafeOutfitScore(item) + sourceScore;
+  }
+
   const keywords = CAFE_CATEGORY_RULES[category] || [];
   const text = getCafeCategoryText(item);
   const matchScore = keywords.reduce(
@@ -2051,12 +2166,51 @@ function getCafeCategoryText(item) {
   );
 }
 
+function cafeOutfitScore(item) {
+  const titleText = normalizeCompactText(item.title);
+  const sourceText = normalizeCompactText(
+    [item.cafeName, item.source, item.siteName, item.boardName].filter(Boolean).join(" ")
+  );
+  const strongTitleMatches = CAFE_OUTFIT_STRONG_TITLE_KEYWORDS.reduce(
+    (score, keyword) => score + (titleText.includes(normalizeCompactText(keyword)) ? 1 : 0),
+    0
+  );
+  const weakTitleMatches = CAFE_OUTFIT_WEAK_TITLE_KEYWORDS.reduce(
+    (score, keyword) => score + (titleText.includes(normalizeCompactText(keyword)) ? 1 : 0),
+    0
+  );
+  const isFashionSource = CAFE_OUTFIT_SOURCE_KEYWORDS.some((keyword) =>
+    sourceText.includes(normalizeCompactText(keyword))
+  );
+
+  if (strongTitleMatches > 0) return strongTitleMatches * 30 + weakTitleMatches * 8 + (isFashionSource ? 12 : 0);
+  if (isFashionSource && weakTitleMatches > 0) return weakTitleMatches * 10 + 8;
+  return 0;
+}
+
 function getCafeThumbnailImageIndex(item) {
   const text = normalizeCompactText(
     [item.cafeName, item.source, item.siteName, item.boardName, item.link].filter(Boolean).join(" ")
   );
 
   return SECOND_THUMBNAIL_CAFE_KEYWORDS.some((keyword) => text.includes(normalizeCompactText(keyword))) ? 1 : 0;
+}
+
+function getExternalThumbnailImageIndex(item) {
+  const text = normalizeCompactText(
+    [
+      item.source,
+      item.siteName,
+      item.communityName,
+      item.boardName,
+      item.sourceUrl,
+      item.link,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  return SECOND_THUMBNAIL_COMMUNITY_KEYWORDS.some((keyword) => text.includes(normalizeCompactText(keyword))) ? 1 : 0;
 }
 
 function extractDaumCafeArticleIds(link) {
