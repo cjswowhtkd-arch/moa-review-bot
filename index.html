@@ -483,14 +483,32 @@
             },
             community: {
                 label: "커뮤니티 인기",
-                source: "디시인사이드 실베",
+                source: "디시인사이드 실베 카테고리별 랭킹",
                 empty: "디시인사이드 인기 데이터 연결 준비 중입니다.",
                 feeds: [
                     {
-                        key: "communityPopular",
-                        label: "커뮤니티 인기",
-                        dataKeys: ["communityPopular", "community", "communities"],
-                        source: "디시인사이드 실베"
+                        key: "communityIssue",
+                        label: "이슈",
+                        dataKeys: ["communityIssue", "communityPopular", "community", "communities"],
+                        source: "디시 실베 이슈·사회 화제"
+                    },
+                    {
+                        key: "communityHumor",
+                        label: "유머",
+                        dataKeys: ["communityHumor"],
+                        source: "디시 실베 유머·밈"
+                    },
+                    {
+                        key: "communityEntertain",
+                        label: "방송연예",
+                        dataKeys: ["communityEntertain"],
+                        source: "디시 실베 방송·연예 화제"
+                    },
+                    {
+                        key: "communityInfo",
+                        label: "정보후기",
+                        dataKeys: ["communityInfo"],
+                        source: "디시 실베 정보·후기 화제"
                     }
                 ]
             }
@@ -500,7 +518,7 @@
         let activeFeedBySection = {
             mediaTrend: "mediaChat",
             naverCafe: "daily",
-            community: "communityPopular"
+            community: "communityIssue"
         };
         let rawDataStore = {};
 
