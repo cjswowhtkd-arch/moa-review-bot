@@ -49,13 +49,15 @@ const YOUTUBE_WATCH_BASE = "https://www.youtube.com/watch";
 const YOUTUBE_LIVE_QUERIES = parseListEnv(process.env.YOUTUBE_LIVE_QUERIES, [
   "라이브",
   "게임 라이브",
+  "뉴스 라이브",
   "음악 라이브",
 ]);
 
 const MEDIA_FEEDS = [
-  { key: "mediaChat", label: "채팅", category: "chat" },
+  { key: "mediaHot", label: "라이브HOT", category: "all" },
   { key: "mediaGame", label: "게임", category: "game" },
-  { key: "mediaMusic", label: "음악", category: "music" },
+  { key: "mediaTalk", label: "토크방송", category: "talk" },
+  { key: "mediaMusic", label: "음악라디오", category: "music" },
 ];
 
 const MEDIA_CATEGORY_RULES = {
@@ -68,6 +70,14 @@ const MEDIA_CATEGORY_RULES = {
     "karaoke",
     "cover",
     "concert",
+    "playlist",
+    "플레이리스트",
+    "bgm",
+    "radio",
+    "라디오",
+    "힐링",
+    "sleep",
+    "sleeping",
     "dj",
     "버스킹",
     "피아노",
@@ -97,7 +107,7 @@ const MEDIA_CATEGORY_RULES = {
     "rpg",
     "스팀",
   ],
-  chat: [
+  talk: [
     "just chatting",
     "talk",
     "토크",
@@ -111,6 +121,13 @@ const MEDIA_CATEGORY_RULES = {
     "버튜버",
     "주식",
     "뉴스",
+    "시사",
+    "정치",
+    "경제",
+    "라이브",
+    "live",
+    "일상방송",
+    "여캠",
     "youtube",
     "유튜브",
   ],
@@ -311,7 +328,7 @@ async function startRobot() {
   for (const feed of MEDIA_FEEDS) {
     categoriesData[feed.key] = mediaBuckets[feed.key] || [];
   }
-  categoriesData.mediaTrends = categoriesData.mediaChat || [];
+  categoriesData.mediaTrends = categoriesData.mediaHot || [];
 
   categoriesData.updatedAt = new Date().toISOString();
 
@@ -612,7 +629,8 @@ async function fetchMediaTrendBuckets() {
 
   const buckets = {};
   for (const feed of MEDIA_FEEDS) {
-    const categoryItems = rankedItems.filter((item) => item.mediaCategory === feed.category);
+    const categoryItems =
+      feed.category === "all" ? rankedItems : rankedItems.filter((item) => item.mediaCategory === feed.category);
     const topItems = selectMediaTopItems(categoryItems)
       .map((item, index) => toPublicTrendItem(item, index, "media", FALLBACK_IMAGES.mediaTrend));
 
@@ -645,7 +663,7 @@ function enforceRequiredMediaSources(items) {
 
 async function fetchMediaTrends() {
   const buckets = await fetchMediaTrendBuckets();
-  return buckets.mediaChat || [];
+  return buckets.mediaHot || [];
 }
 
 async function fetchChzzkLiveRankings() {
@@ -1833,11 +1851,11 @@ function classifyMediaCategory(item) {
     if (sourceText.includes(keyword.toLowerCase())) return "game";
   }
 
-  for (const keyword of MEDIA_CATEGORY_RULES.chat) {
-    if (sourceText.includes(keyword.toLowerCase())) return "chat";
+  for (const keyword of MEDIA_CATEGORY_RULES.talk) {
+    if (sourceText.includes(keyword.toLowerCase())) return "talk";
   }
 
-  return "chat";
+  return "talk";
 }
 
 function selectMediaTopItems(items) {
