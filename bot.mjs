@@ -22,7 +22,9 @@ const TWITCH_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.TWITCH_SOURCE_ITEM_LI
 const TWITCH_MIN_ITEMS_PER_MEDIA_FEED = toPositiveInt(process.env.TWITCH_MIN_ITEMS_PER_MEDIA_FEED, 3);
 const YOUTUBE_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.YOUTUBE_SOURCE_ITEM_LIMIT, 50);
 const YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED = toPositiveInt(process.env.YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED, 2);
-const REQUIRE_MEDIA_API_SOURCES = process.env.REQUIRE_MEDIA_API_SOURCES !== "0";
+const REQUIRE_MEDIA_API_SOURCES = process.env.REQUIRE_MEDIA_API_SOURCES === "1";
+const REQUIRE_TWITCH_SOURCE = process.env.REQUIRE_TWITCH_SOURCE === "1";
+const REQUIRE_YOUTUBE_SOURCE = process.env.REQUIRE_YOUTUBE_SOURCE === "1";
 const HTTP_TIMEOUT_MS = toPositiveInt(process.env.HTTP_TIMEOUT_MS, 12000);
 const ARTICLE_TIMEOUT_MS = toPositiveInt(process.env.ARTICLE_TIMEOUT_MS, 9000);
 const ARTICLE_CONCURRENCY = toPositiveInt(process.env.ARTICLE_CONCURRENCY, 5);
@@ -1005,15 +1007,15 @@ function enforceRequiredMediaSources(items) {
   if (!REQUIRE_MEDIA_API_SOURCES) return;
 
   const missing = [];
-  if (process.env.REQUIRE_TWITCH_SOURCE !== "0" && !items.some(isTwitchItem)) missing.push("트위치");
-  if (process.env.REQUIRE_YOUTUBE_SOURCE === "1" && !items.some(isYoutubeItem)) missing.push("유튜브");
+  if (REQUIRE_TWITCH_SOURCE && !items.some(isTwitchItem)) missing.push("트위치");
+  if (REQUIRE_YOUTUBE_SOURCE && !items.some(isYoutubeItem)) missing.push("유튜브");
 
   if (!missing.length) return;
 
   throw new Error(
     `${missing.join(", ")} 수집 결과가 0개입니다. API 키 또는 할당량을 확인하세요. ` +
       "기존 Firebase 데이터를 지우지 않기 위해 저장을 중단합니다. " +
-      "임시로 부분 저장을 허용하려면 REQUIRE_MEDIA_API_SOURCES=0으로 설정하세요."
+      "해당 소스를 반드시 포함해야 할 때만 REQUIRE_MEDIA_API_SOURCES=1, REQUIRE_TWITCH_SOURCE=1, REQUIRE_YOUTUBE_SOURCE=1을 설정하세요."
   );
 }
 
