@@ -103,12 +103,6 @@ const SECOND_THUMBNAIL_CAFE_KEYWORDS = [
   "subdued20club",
   "ssaumjil",
 ];
-const SECOND_THUMBNAIL_COMMUNITY_KEYWORDS = [
-  "루리웹",
-  "ruliweb",
-  "인스티즈",
-  "instiz",
-];
 
 const MEDIA_FEEDS = [
   { key: "mediaHot", label: "라이브HOT", category: "all" },
@@ -1631,8 +1625,7 @@ async function enrichExternalArticleImage(item, fallbackImage) {
 async function fetchExternalFirstImage(item) {
   if (!isHttpUrl(item.link)) return "";
 
-  const imageIndex = getExternalThumbnailImageIndex(item);
-  const cacheKey = `external:${imageIndex}:${item.link}`;
+  const cacheKey = `external:first:${item.link}`;
   if (articleImageCache.has(cacheKey)) return articleImageCache.get(cacheKey);
 
   const html = await fetchText(item.link, {
@@ -1641,7 +1634,7 @@ async function fetchExternalFirstImage(item) {
   });
   const firstImage = extractFirstImageFromHtml(html, {
     baseUrl: item.link,
-    imageIndex,
+    imageIndex: 0,
   });
 
   articleImageCache.set(cacheKey, firstImage);
@@ -2196,23 +2189,6 @@ function getCafeThumbnailImageIndex(item) {
   return SECOND_THUMBNAIL_CAFE_KEYWORDS.some((keyword) => text.includes(normalizeCompactText(keyword))) ? 1 : 0;
 }
 
-function getExternalThumbnailImageIndex(item) {
-  const text = normalizeCompactText(
-    [
-      item.source,
-      item.siteName,
-      item.communityName,
-      item.boardName,
-      item.sourceUrl,
-      item.link,
-    ]
-      .filter(Boolean)
-      .join(" ")
-  );
-
-  return SECOND_THUMBNAIL_COMMUNITY_KEYWORDS.some((keyword) => text.includes(normalizeCompactText(keyword))) ? 1 : 0;
-}
-
 function extractDaumCafeArticleIds(link) {
   try {
     const url = new URL(link);
@@ -2597,6 +2573,15 @@ function isUsableArticleImage(value, options = {}) {
     if (hostname.includes("nstatic.dcinside.com") && /\/(?:w|m)\/images\//i.test(path)) {
       return false;
     }
+    if (hostname.includes("ruliweb.com") && /ruliweb_bi|ruli_200|\/img\/2016\/common\//i.test(path)) {
+      return false;
+    }
+    if (hostname.includes("instiz.net") && /\/data\/images\/|ico_app|ico_logo|ico_instiz|ico_green_leaf|btn_password/i.test(path)) {
+      return false;
+    }
+    if (hostname.includes("pstatic.net") && /share\/images|appicon|naver_square/i.test(path)) {
+      return false;
+    }
     if (/profile|avatar|emoticon|icon|sprite|blank|default|transparent|logo|loading/i.test(path)) {
       return false;
     }
@@ -2612,7 +2597,13 @@ function needsEmbeddedImage(value) {
   if (!isHttpUrl(value)) return false;
   try {
     const hostname = new URL(value).hostname.toLowerCase();
-    return hostname.includes("dcinside.co.kr") || hostname.includes("dcimg") || hostname.includes("dccdn");
+    return (
+      hostname.includes("dcinside.co.kr") ||
+      hostname.includes("dcimg") ||
+      hostname.includes("dccdn") ||
+      hostname.includes("ruliweb.com") ||
+      hostname.includes("instiz.net")
+    );
   } catch {
     return false;
   }
