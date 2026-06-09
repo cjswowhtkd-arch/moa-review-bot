@@ -29,7 +29,6 @@ const NAVER_CAFE_ARTICLE_API_BASE = "https://article.cafe.naver.com/gw/v4/cafes"
 const DAUM_CAFE_TOP_URL = "https://m.cafe.daum.net/";
 const CHZZK_LIVES_API_URL = "https://api.chzzk.naver.com/service/v1/lives?size=20&sortType=POPULAR";
 const CHZZK_LIVE_PAGE_BASE = "https://chzzk.naver.com/live";
-const CHZZK_LIVE_EMBED_BASE = "https://chzzk.naver.com/embed/live";
 const SOOP_LIVES_API_URL =
   "https://live.sooplive.co.kr/api/main_broad_list_api.php?selectType=action&selectValue=all&orderType=view_cnt&pageNo=1&lang=ko_KR";
 const SOOP_PLAY_PAGE_BASE = "https://play.sooplive.com";
@@ -311,7 +310,8 @@ async function fetchChzzkLiveRankings() {
         sourceRank: index + 1,
         title: stripHtml(item.liveTitle),
         link: channelId ? `${CHZZK_LIVE_PAGE_BASE}/${encodeURIComponent(channelId)}` : "https://chzzk.naver.com/",
-        previewUrl: channelId ? `${CHZZK_LIVE_EMBED_BASE}/${encodeURIComponent(channelId)}?autoplay=1&muted=1` : "",
+        previewUrl: "",
+        previewType: "image",
         img: thumbnail,
         thumbnail,
         platformName: "치지직",
@@ -364,7 +364,8 @@ async function fetchSoopLiveRankings() {
         sourceRank: index + 1,
         title: stripHtml(item.broad_title),
         link: playUrl,
-        previewUrl: userId && broadNo ? `${playUrl}/embed` : "",
+        previewUrl: "",
+        previewType: "image",
         img: thumbnail,
         thumbnail,
         platformName: "SOOP",
@@ -719,6 +720,7 @@ function toPublicTrendItem(item, index, type, fallbackImage) {
     recommendCount: toNumber(item.recommendCount),
     commentCount: toNumber(item.commentCount),
     previewUrl: item.previewUrl || item.livePreviewUrl || item.embedUrl || "",
+    previewType: item.previewType || item.previewKind || "",
   };
 
   if (type === "community") {
@@ -737,6 +739,7 @@ function toPublicTrendItem(item, index, type, fallbackImage) {
     contentThumbnail: base.img,
     watchUrl: item.link,
     previewUrl: base.previewUrl,
+    previewType: base.previewType,
   };
 }
 
