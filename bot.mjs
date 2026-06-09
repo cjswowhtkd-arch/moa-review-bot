@@ -22,6 +22,7 @@ const TWITCH_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.TWITCH_SOURCE_ITEM_LI
 const TWITCH_MIN_ITEMS_PER_MEDIA_FEED = toPositiveInt(process.env.TWITCH_MIN_ITEMS_PER_MEDIA_FEED, 3);
 const YOUTUBE_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.YOUTUBE_SOURCE_ITEM_LIMIT, 50);
 const YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED = toPositiveInt(process.env.YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED, 2);
+const ENABLE_YOUTUBE_REPLAY = process.env.ENABLE_YOUTUBE_REPLAY === "1";
 const REQUIRE_MEDIA_API_SOURCES = process.env.REQUIRE_MEDIA_API_SOURCES === "1";
 const REQUIRE_TWITCH_SOURCE = process.env.REQUIRE_TWITCH_SOURCE === "1";
 const REQUIRE_YOUTUBE_SOURCE = process.env.REQUIRE_YOUTUBE_SOURCE === "1";
@@ -507,23 +508,57 @@ const COMMUNITY_CATEGORY_RULES = {
   entertainment: [
     "연예",
     "방송",
+    "방송인",
     "아이돌",
     "걸그룹",
     "보이그룹",
+    "연예인",
     "배우",
     "드라마",
+    "예능",
     "영화",
     "넷플릭스",
+    "넷플",
+    "티빙",
+    "웨이브",
+    "디즈니",
+    "쿠팡플레이",
     "ott",
     "유튜브",
     "유튜버",
+    "크리에이터",
+    "인플루언서",
+    "bj",
     "인방",
     "스트리머",
     "음악",
     "노래",
     "가수",
+    "컴백",
+    "데뷔",
+    "멤버",
     "콘서트",
     "공연",
+    "팬미팅",
+    "시상식",
+    "무대",
+    "화보",
+    "인터뷰",
+    "티저",
+    "예고편",
+    "ost",
+    "공식입장",
+    "소속사",
+    "열애",
+    "결별",
+    "연애",
+    "커플",
+    "인스타",
+    "릴스",
+    "모델",
+    "셀럽",
+    "아나운서",
+    "치어리더",
     "bts",
     "그라비아",
     "영점프",
@@ -839,10 +874,11 @@ async function fetchCommunityTrendBuckets() {
       .map((item, index) => toPublicTrendItem(item, index, "community", FALLBACK_IMAGES.community));
 
     buckets[feed.key] = topItems;
+    const shortageLabel = topItems.length < MAX_ITEMS ? " (후보 부족)" : "";
     console.log(
       `  - ${feed.label}: 후보 ${categoryItems.length}개, 이미지 ${
         topItems.filter((item) => isDisplayableImage(item.img)).length
-      }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
+      }개, 최종 ${topItems.length}/${MAX_ITEMS}개${shortageLabel}`
     );
   }
 
@@ -931,6 +967,10 @@ async function fetchMediaTrendBuckets() {
       console.log(`  - ${source.label}: ${items.length}개`);
       return items.slice(0, source.limit || SOURCE_ITEM_LIMIT);
     } catch (error) {
+      if (isOptionalMediaQuotaError(source.label, error)) {
+        console.log(`  - ${source.label}: YouTube 할당량 제한으로 이번 회차 건너뜀`);
+        return [];
+      }
       console.warn(`  - ${source.label} 수집 실패: ${error.message}`);
       return [];
     }
@@ -955,6 +995,8 @@ async function fetchMediaTrendBuckets() {
     const categoryItems =
       feed.category === "replay"
         ? replayItems
+        : feed.category === "music"
+          ? buildMusicMediaItems(rankedItems, replayItems)
         : feed.category === "all"
           ? rankedItems
           : rankedItems.filter((item) => item.mediaCategory === feed.category);
@@ -962,10 +1004,11 @@ async function fetchMediaTrendBuckets() {
       .map((item, index) => toPublicTrendItem(item, index, "media", FALLBACK_IMAGES.mediaTrend));
 
     buckets[feed.key] = topItems;
+    const shortageLabel = topItems.length < MAX_ITEMS ? " (후보 부족)" : "";
     console.log(
       `  - ${feed.label}: 후보 ${categoryItems.length}개, 이미지 ${
         topItems.filter((item) => isDisplayableImage(item.img)).length
-      }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
+      }개, 최종 ${topItems.length}/${MAX_ITEMS}개${shortageLabel}`
     );
   }
 
@@ -977,9 +1020,11 @@ async function fetchMediaReplayRankings(liveItems) {
 
   const sourceFetchers = [
     { label: "치지직 VOD", fetcher: fetchChzzkReplayRankings },
-    { label: "YouTube 완료 라이브", fetcher: fetchYoutubeReplayRankings },
     { label: "Twitch VOD", fetcher: () => fetchTwitchReplayRankings(liveItems) },
   ];
+  if (ENABLE_YOUTUBE_REPLAY) {
+    sourceFetchers.splice(1, 0, { label: "YouTube 완료 라이브", fetcher: fetchYoutubeReplayRankings });
+  }
 
   const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
     try {
@@ -987,6 +1032,10 @@ async function fetchMediaReplayRankings(liveItems) {
       console.log(`    · ${source.label}: ${items.length}개`);
       return items;
     } catch (error) {
+      if (isOptionalMediaQuotaError(source.label, error)) {
+        console.log(`    · ${source.label}: YouTube 할당량 제한으로 이번 회차 건너뜀`);
+        return [];
+      }
       console.warn(`    · ${source.label} 수집 실패: ${error.message}`);
       return [];
     }
@@ -1001,6 +1050,23 @@ async function fetchMediaReplayRankings(liveItems) {
     }))
     .sort(compareReplayTrendItems)
     .slice(0, Math.max(YOUTUBE_SOURCE_ITEM_LIMIT, MAX_ITEMS * 3));
+}
+
+function buildMusicMediaItems(liveItems, replayItems) {
+  const liveMusicItems = liveItems.filter((item) => item.mediaCategory === "music" || classifyMediaCategory(item) === "music");
+  const replayMusicItems = replayItems
+    .filter((item) => classifyMediaCategory(item) === "music")
+    .map((item) => ({
+      ...item,
+      mediaCategory: "music",
+      trendScore: item.trendScore || calculateReplayTrendScore(item),
+    }));
+
+  return dedupeItems([...liveMusicItems, ...replayMusicItems]).sort(compareTrendItems);
+}
+
+function isOptionalMediaQuotaError(label, error) {
+  return /youtube/i.test(String(label || "")) && /429|quota|too many requests/i.test(String(error?.message || ""));
 }
 
 function enforceRequiredMediaSources(items) {
@@ -1612,7 +1678,14 @@ async function enrichExternalArticleImage(item, fallbackImage) {
 
   const image = firstImage || item.img || fallbackImage;
   const displayImage = await embedImageIfNeeded(image, item).catch((error) => {
-    console.warn(`  - 보호 이미지 변환 실패: ${item.title} (${error.message})`);
+    if (error?.code === "BROKEN_IMAGE") {
+      console.warn(`  - 깨진 보호 이미지 대체: ${item.title} (${error.message})`);
+      return fallbackImage;
+    }
+    if (error?.code === "IMAGE_TOO_LARGE") {
+      return image;
+    }
+    console.warn(`  - 보호 이미지는 원본 주소 사용: ${item.title} (${error.message})`);
     return image;
   });
 
@@ -2624,10 +2697,16 @@ async function embedImageIfNeeded(imageUrl, item) {
     signal: AbortSignal.timeout(ARTICLE_TIMEOUT_MS),
   });
 
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  if (!response.ok) {
+    const error = new Error(`${response.status} ${response.statusText}`);
+    if (response.status === 404 || response.status === 410) error.code = "BROKEN_IMAGE";
+    throw error;
+  }
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length <= 0 || bytes.length > EMBED_IMAGE_MAX_BYTES) {
-    throw new Error(`image size ${bytes.length} bytes`);
+    const error = new Error(`image size ${bytes.length} bytes`);
+    error.code = bytes.length <= 0 ? "BROKEN_IMAGE" : "IMAGE_TOO_LARGE";
+    throw error;
   }
 
   const mimeType = detectImageMimeType(bytes, response.headers.get("content-type"));
@@ -2894,8 +2973,6 @@ function selectMediaTopItems(items) {
   const sortedItems = items.slice().sort(compareLiveTrendItems);
   const selected = [];
   for (const item of sortedItems) {
-    if (isTwitchItem(item) && selected.filter(isTwitchItem).length >= TWITCH_MIN_ITEMS_PER_MEDIA_FEED) continue;
-    if (isYoutubeItem(item) && selected.filter(isYoutubeItem).length >= YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED) continue;
     selected.push(item);
     if (selected.length >= MAX_ITEMS) break;
   }
@@ -2913,10 +2990,6 @@ function selectMediaTopItems(items) {
 
   return dedupeItems(selected)
     .sort(compareLiveTrendItems)
-    .filter((item, index, list) => {
-      if (!isYoutubeItem(item)) return true;
-      return list.slice(0, index + 1).filter(isYoutubeItem).length <= YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED;
-    })
     .slice(0, MAX_ITEMS);
 }
 
