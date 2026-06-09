@@ -424,6 +424,8 @@
         <nav id="feedFilterTabs" class="tab-wrapper filter-tabs" aria-label="세부 필터">
             <button id="tab-daily" class="tab-btn active" data-feed="daily">실시간HOT</button>
             <button id="tab-weekly" class="tab-btn" data-feed="weekly">주간TOP</button>
+            <button id="tab-monthly" class="tab-btn" data-feed="monthly">월간TOP</button>
+            <button id="tab-yearly" class="tab-btn" data-feed="yearly">연간TOP</button>
         </nav>
 
         <div class="summary-row">
@@ -484,7 +486,9 @@
                 empty: "카페 인기글 데이터가 비어있습니다.",
                 feeds: [
                     { key: "daily", label: "실시간HOT", dataKeys: ["daily"], source: "네이버카페·다음카페 실시간 인기글" },
-                    { key: "weekly", label: "주간TOP", dataKeys: ["weekly"], source: "네이버 카페 주간TOP" }
+                    { key: "weekly", label: "주간TOP", dataKeys: ["weekly"], source: "네이버카페·다음카페 주간 TOP" },
+                    { key: "monthly", label: "월간TOP", dataKeys: ["monthly"], source: "네이버카페·다음카페 월간 TOP" },
+                    { key: "yearly", label: "연간TOP", dataKeys: ["yearly"], source: "네이버카페·다음카페 연간 TOP" }
                 ]
             },
             community: {
