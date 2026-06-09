@@ -15,6 +15,9 @@ const DEFAULT_FIREBASE_DB_URL =
 
 const MAX_ITEMS = toPositiveInt(process.env.MAX_ITEMS_PER_CATEGORY, 10);
 const SOURCE_ITEM_LIMIT = toPositiveInt(process.env.SOURCE_ITEM_LIMIT, 20);
+const COMMUNITY_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.COMMUNITY_SOURCE_ITEM_LIMIT, 100);
+const COMMUNITY_PAGE_LIMIT = toPositiveInt(process.env.COMMUNITY_PAGE_LIMIT, 5);
+const REQUIRE_COMMUNITY_SOURCE = process.env.REQUIRE_COMMUNITY_SOURCE !== "0";
 const TWITCH_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.TWITCH_SOURCE_ITEM_LIMIT, 100);
 const TWITCH_MIN_ITEMS_PER_MEDIA_FEED = toPositiveInt(process.env.TWITCH_MIN_ITEMS_PER_MEDIA_FEED, 3);
 const YOUTUBE_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.YOUTUBE_SOURCE_ITEM_LIMIT, 50);
@@ -116,6 +119,9 @@ const MEDIA_CATEGORY_RULES = {
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/125.0 Safari/537.36";
+const MOBILE_USER_AGENT =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 " +
+  "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 const USER_AGENT = process.env.TREND_USER_AGENT || BROWSER_USER_AGENT;
 
 const CAFE_RANGES = [
@@ -140,10 +146,141 @@ const COMMUNITY_SOURCES = [
     key: "dcinsideBest",
     label: "디시인사이드 실베",
     siteName: "디시인사이드",
-    url: "https://gall.dcinside.com/board/lists/?id=dcbest",
+    url: "https://m.dcinside.com/board/dcbest",
+    referer: "https://m.dcinside.com/",
+    userAgent: MOBILE_USER_AGENT,
     parser: parseDcinsideBest,
   },
 ];
+
+const COMMUNITY_FEEDS = [
+  { key: "communityIssue", label: "이슈", category: "issue" },
+  { key: "communityHumor", label: "유머", category: "humor" },
+  { key: "communityEntertain", label: "방송연예", category: "entertainment" },
+  { key: "communityInfo", label: "정보후기", category: "info" },
+];
+
+const COMMUNITY_CATEGORY_RULES = {
+  humor: [
+    "싱글벙글",
+    "웃긴",
+    "개웃",
+    "웃음",
+    "유머",
+    "짤",
+    "밈",
+    "드립",
+    "레전드",
+    "ㅋㅋ",
+    "만화",
+    "카툰",
+    "썰",
+  ],
+  entertainment: [
+    "연예",
+    "방송",
+    "아이돌",
+    "걸그룹",
+    "보이그룹",
+    "배우",
+    "드라마",
+    "영화",
+    "넷플릭스",
+    "ott",
+    "유튜브",
+    "유튜버",
+    "인방",
+    "스트리머",
+    "음악",
+    "노래",
+    "가수",
+    "콘서트",
+    "공연",
+    "bts",
+    "그라비아",
+    "영점프",
+    "ㅇㅎ",
+    "나나",
+    "배용준",
+    "이승기",
+    "연갤",
+    "여갤",
+    "기갤",
+    "더갤",
+  ],
+  info: [
+    "후기",
+    "맛집",
+    "스시",
+    "런치",
+    "먹방",
+    "요리",
+    "음식",
+    "여행",
+    "전국일주",
+    "캠핑",
+    "사진",
+    "pic",
+    "코모레비",
+    "공원",
+    "문화",
+    "패션",
+    "운동",
+    "헬스",
+    "직장",
+    "블라인드",
+    "애플",
+    "wwdc",
+    "요약",
+    "정보",
+    "리뷰",
+    "자동차",
+    "버스",
+    "시내버스",
+    "게임",
+    "it",
+    "테크",
+    "ai",
+    "인공지능",
+    "컴퓨터",
+    "노트북",
+    "스마트폰",
+    "아이폰",
+    "갤럭시",
+    "스팀",
+    "닌텐도",
+    "플스",
+    "xbox",
+    "롤",
+    "리그오브레전드",
+    "발로란트",
+    "메이플",
+    "로스트아크",
+    "마인크래프트",
+    "던파",
+  ],
+  issue: [
+    "정치",
+    "사회",
+    "사건",
+    "사고",
+    "논란",
+    "뉴스",
+    "경제",
+    "주식",
+    "부동산",
+    "법",
+    "재판",
+    "경찰",
+    "검찰",
+    "전쟁",
+    "미국",
+    "중국",
+    "일본",
+    "한국",
+    "정부",
+  ],
+};
 
 const FALLBACK_IMAGES = {
   naverCafe:
@@ -164,13 +301,11 @@ async function startRobot() {
     categoriesData[range.key] = await fetchCafeTrend(range);
   }
 
-  categoriesData.communityPopular = await fetchAggregateTrend({
-    key: "communityPopular",
-    label: "커뮤니티 인기",
-    type: "community",
-    sources: COMMUNITY_SOURCES,
-    fallbackImage: FALLBACK_IMAGES.community,
-  });
+  const communityBuckets = await fetchCommunityTrendBuckets();
+  for (const feed of COMMUNITY_FEEDS) {
+    categoriesData[feed.key] = communityBuckets[feed.key] || [];
+  }
+  categoriesData.communityPopular = communityBuckets.communityPopular || categoriesData.communityIssue || [];
 
   const mediaBuckets = await fetchMediaTrendBuckets();
   for (const feed of MEDIA_FEEDS) {
@@ -328,6 +463,117 @@ async function fetchAggregateTrend({ key, label, type, sources, fallbackImage })
   );
 
   return topItems;
+}
+
+async function fetchCommunityTrendBuckets() {
+  console.log("\n[커뮤니티 인기] 디시인사이드 실베 카테고리별 수집");
+
+  const sourceItems = await fetchCommunitySourceItems();
+  enforceRequiredCommunitySource(sourceItems);
+  const candidates = dedupeItems(sourceItems)
+    .map((item) => ({
+      ...item,
+      type: "community",
+      communityCategory: classifyCommunityCategory(item),
+      trendScore: calculateTrendScore(item, "community"),
+    }))
+    .sort(compareTrendItems)
+    .slice(0, Math.max(COMMUNITY_SOURCE_ITEM_LIMIT, MAX_ITEMS * COMMUNITY_FEEDS.length));
+
+  const enrichedItems = await mapLimit(
+    candidates,
+    ARTICLE_CONCURRENCY,
+    (item) => enrichExternalArticleImage(item, FALLBACK_IMAGES.community)
+  );
+
+  const rankedItems = enrichedItems
+    .map((item) => ({
+      ...item,
+      communityCategory: item.communityCategory || classifyCommunityCategory(item),
+      trendScore: calculateTrendScore(item, "community"),
+    }))
+    .sort(compareTrendItems);
+
+  const buckets = {
+    communityPopular: selectBalancedTopItems(rankedItems, MAX_ITEMS)
+      .map((item, index) => toPublicTrendItem(item, index, "community", FALLBACK_IMAGES.community)),
+  };
+
+  for (const feed of COMMUNITY_FEEDS) {
+    const categoryItems = rankedItems.filter((item) => item.communityCategory === feed.category);
+    const topItems = categoryItems
+      .slice(0, MAX_ITEMS)
+      .map((item, index) => toPublicTrendItem(item, index, "community", FALLBACK_IMAGES.community));
+
+    buckets[feed.key] = topItems;
+    console.log(
+      `  - ${feed.label}: 후보 ${categoryItems.length}개, 이미지 ${
+        topItems.filter((item) => isDisplayableImage(item.img)).length
+      }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
+    );
+  }
+
+  console.log(
+    `  - 전체HOT: 후보 ${rankedItems.length}개, 이미지 ${
+      buckets.communityPopular.filter((item) => isDisplayableImage(item.img)).length
+    }개, 최종 ${buckets.communityPopular.length}/${MAX_ITEMS}개`
+  );
+
+  return buckets;
+}
+
+function enforceRequiredCommunitySource(items) {
+  if (!REQUIRE_COMMUNITY_SOURCE || items.length > 0) return;
+
+  throw new Error(
+    "디시인사이드 실베 수집 결과가 0개입니다. 기존 Firebase 커뮤니티 데이터를 지우지 않기 위해 저장을 중단합니다. " +
+      "임시로 부분 저장을 허용하려면 REQUIRE_COMMUNITY_SOURCE=0으로 설정하세요."
+  );
+}
+
+async function fetchCommunitySourceItems() {
+  const pageRequests = [];
+  for (const source of COMMUNITY_SOURCES) {
+    for (let page = 1; page <= COMMUNITY_PAGE_LIMIT; page += 1) {
+      pageRequests.push({
+        source,
+        page,
+        url: withPageParam(source.url, page),
+      });
+    }
+  }
+
+  const pageResults = await mapLimit(pageRequests, SOURCE_CONCURRENCY, async ({ source, page, url }) => {
+    try {
+      const html = await fetchText(url, {
+        encoding: source.encoding,
+        referer: source.referer || source.url,
+        userAgent: source.userAgent,
+      });
+      const parsed = source
+        .parser(html, { ...source, url })
+        .filter((item) => item.title && item.link);
+      const offset = (page - 1) * Math.max(parsed.length, SOURCE_ITEM_LIMIT);
+
+      return parsed.map((item, index) => ({
+        ...item,
+        type: "community",
+        sourceKey: source.key,
+        source: source.siteName,
+        siteName: source.siteName,
+        boardName: item.boardName || source.label,
+        sourceUrl: url,
+        sourceRank: offset + (item.sourceRank || index + 1),
+      }));
+    } catch (error) {
+      console.warn(`  - ${source.label} ${page}페이지 수집 실패: ${error.message}`);
+      return [];
+    }
+  });
+
+  const items = dedupeItems(pageResults.flat()).slice(0, COMMUNITY_SOURCE_ITEM_LIMIT);
+  console.log(`  - 디시인사이드 실베: ${items.length}개`);
+  return items;
 }
 
 async function fetchMediaTrendBuckets() {
@@ -889,7 +1135,7 @@ function parseDcinsideBest(html, source) {
     .map((match) => match[0])
     .filter((row) => /us-post/i.test(row) && !/icon_notice|공지/.test(row));
 
-  return rows.map((row, index) => {
+  const desktopItems = rows.map((row, index) => {
     const titleCell = row.match(/<td\b[^>]*class=["'][^"']*gall_tit[^"']*["'][\s\S]*?<\/td>/i)?.[0] || "";
     const linkMatch = titleCell.match(/<a\b[^>]*href=["']([^"']*\/board\/view\/\?[^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
     const link = absolutizeUrl(linkMatch?.[1] || "", source.url);
@@ -911,6 +1157,45 @@ function parseDcinsideBest(html, source) {
       communityName: galleryName ? `디시 ${galleryName}` : source.siteName,
       publishedAt: parseKoreanDate(dateCell.match(/\btitle=["']([^"']+)["']/i)?.[1] || stripHtml(dateCell)),
       rankingBasis: `${source.label} 공식 목록`,
+    };
+  });
+
+  if (desktopItems.length > 0) return desktopItems;
+  return parseDcinsideBestMobile(html, source);
+}
+
+function parseDcinsideBestMobile(html, source) {
+  const rows = [
+    ...html.matchAll(
+      /<li\b[^>]*>\s*<div\b[^>]*class=["'][^"']*gall-detail-lnktb[^"']*["'][\s\S]*?<span\b[^>]*class=["'][^"']*blockInfo[^"']*["'][\s\S]*?<\/span>\s*<\/li>/gi
+    ),
+  ].map((match) => match[0]);
+
+  return rows.map((row, index) => {
+    const linkMatch = row.match(/<a\b[^>]*href=["']([^"']*\/board\/dcbest\/\d+[^"']*)["'][^>]*class=["'][^"']*\blt\b/i);
+    const link = absolutizeUrl(linkMatch?.[1] || "", source.url);
+    const subjectCell = row.match(/<span\b[^>]*class=["'][^"']*subjectin[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || "";
+    const rawTitle = stripHtml(subjectCell).replace(/\[[\d/]+\]\s*$/, "").trim();
+    const galleryName = rawTitle.match(/^\[([^\]]+)\]/)?.[1] || "";
+    const title = rawTitle.replace(/^\[[^\]]+\]\s*/, "").trim();
+    const thumb = extractImageFromTag(row, source.url);
+    const viewCount = parseCount(row.match(/조회\s*([\d,.만천]+)/i)?.[1]);
+    const recommendCount = parseCount(row.match(/추천\s*<span[^>]*>\s*([\d,.만천]+)/i)?.[1]);
+    const commentCount = parseCount(row.match(/<span\b[^>]*class=["'][^"']*\bct\b[^"']*["'][^>]*>\s*([\d,.만천]+)/i)?.[1]);
+    const timeLabel = row.match(/<li>\s*((?:\d{1,2}:\d{2})|(?:\d{2}\.\d{2}))\s*<\/li>/i)?.[1] || "";
+    const cleanGalleryName = galleryName && !/^\d+갤$/.test(galleryName) ? `디시 ${galleryName}` : source.siteName;
+
+    return {
+      sourceRank: index + 1,
+      title,
+      link,
+      img: thumb,
+      viewCount,
+      recommendCount,
+      commentCount,
+      communityName: cleanGalleryName,
+      publishedAt: timeLabel ? parseKoreanDate(timeLabel) : new Date().toISOString(),
+      rankingBasis: `${source.label} 모바일 공식 목록`,
     };
   });
 }
@@ -1012,6 +1297,7 @@ function toPublicTrendItem(item, index, type, fallbackImage) {
     return {
       ...base,
       communityName: item.communityName || item.source || item.siteName,
+      communityCategory: item.communityCategory || classifyCommunityCategory(item),
     };
   }
 
@@ -1253,7 +1539,7 @@ async function fetchText(url, options = {}) {
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": USER_AGENT,
+        "User-Agent": options.userAgent || USER_AGENT,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.6,en;q=0.5",
         Referer: options.referer || url,
@@ -1501,6 +1787,28 @@ function getYoutubeVideoCategoryId(query) {
   return "";
 }
 
+function classifyCommunityCategory(item) {
+  const sourceText = [
+    item.communityCategory,
+    item.title,
+    item.communityName,
+    item.boardName,
+    item.siteName,
+    item.source,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  for (const category of ["humor", "entertainment", "info", "issue"]) {
+    const keywords = COMMUNITY_CATEGORY_RULES[category] || [];
+    if (keywords.some((keyword) => sourceText.includes(keyword.toLowerCase()))) return category;
+  }
+
+  return "issue";
+}
+
 function classifyMediaCategory(item) {
   const sourceText = [
     item.mediaCategory,
@@ -1623,6 +1931,16 @@ function absolutizeUrl(value, baseUrl) {
     return new URL(raw, baseUrl).toString();
   } catch {
     return "";
+  }
+}
+
+function withPageParam(rawUrl, page) {
+  try {
+    const url = new URL(rawUrl);
+    url.searchParams.set("page", String(page));
+    return url.toString();
+  } catch {
+    return rawUrl;
   }
 }
 
