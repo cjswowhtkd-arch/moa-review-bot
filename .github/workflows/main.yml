@@ -23,7 +23,7 @@ jobs:
     - name: 노드(Node.js) 프로그램 설치
       uses: actions/setup-node@v3
       with:
-        node-level: '18'
+        node-version: '18'
 
     - name: 수집 로봇 작동 시작!
       run: node bot.mjs
