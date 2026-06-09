@@ -233,6 +233,31 @@ const COMMUNITY_SOURCES = [
     userAgent: MOBILE_USER_AGENT,
     parser: parseDcinsideBest,
   },
+  {
+    key: "theqooHot",
+    label: "더쿠 HOT",
+    siteName: "더쿠",
+    url: "https://theqoo.net/hot",
+    referer: "https://theqoo.net/hot",
+    parser: parseTheqooHot,
+  },
+  {
+    key: "ruliwebBest",
+    label: "루리웹 베스트",
+    siteName: "루리웹",
+    url: "https://bbs.ruliweb.com/best",
+    referer: "https://bbs.ruliweb.com/best",
+    parser: parseRuliwebBest,
+  },
+  {
+    key: "ppomppuHot",
+    label: "뽐뿌 HOT",
+    siteName: "뽐뿌",
+    url: "https://www.ppomppu.co.kr/hot.php",
+    referer: "https://www.ppomppu.co.kr/hot.php",
+    encoding: "euc-kr",
+    parser: parsePpomppuHot,
+  },
 ];
 
 const COMMUNITY_FEEDS = [
@@ -1296,6 +1321,101 @@ function parseDcinsideBestMobile(html, source) {
       rankingBasis: `${source.label} 모바일 공식 목록`,
     };
   });
+}
+
+function parseTheqooHot(html, source) {
+  const rows = [...String(html || "").matchAll(/<tr\b[^>]*data-document_srl=["'][^"']+["'][\s\S]*?<\/tr>/gi)]
+    .map((match) => match[0])
+    .filter((row) => !/class=["'][^"']*notice/i.test(row));
+
+  return rows.map((row, index) => {
+    const titleCell = row.match(/<td\b[^>]*class=["'][^"']*title[^"']*["'][\s\S]*?<\/td>/i)?.[0] || "";
+    const linkMatch = titleCell.match(/<a\b[^>]*href=["']([^"']*\/hot\/\d+[^"']*)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const link = absolutizeUrl(linkMatch?.[1] || "", source.url);
+    const title = stripHtml(linkMatch?.[2] || "").replace(/\[[\d/]+\]\s*$/, "");
+    const category = stripHtml(row.match(/<td\b[^>]*class=["'][^"']*cate[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)?.[1] || "");
+    const commentCount = parseCount(titleCell.match(/class=["'][^"']*replyNum[^"']*["'][^>]*>\s*([\d,.만천]+)/i)?.[1]);
+    const timeLabel = stripHtml(row.match(/<td\b[^>]*class=["'][^"']*time[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)?.[1] || "");
+    const viewCount = parseCount(row.match(/<td\b[^>]*class=["'][^"']*m_no[^"']*["'][^>]*>\s*([\d,.만천]+)/gi)?.[1]);
+
+    return {
+      sourceRank: index + 1,
+      title,
+      link,
+      img: "",
+      viewCount,
+      recommendCount: 0,
+      commentCount,
+      communityName: category ? `더쿠 ${category}` : source.siteName,
+      boardName: category || source.label,
+      publishedAt: timeLabel ? parseKoreanDate(timeLabel) : new Date().toISOString(),
+      rankingBasis: `${source.label} 공식 목록`,
+    };
+  }).filter((item) => item.title && item.link);
+}
+
+function parseRuliwebBest(html, source) {
+  const rows = [...String(html || "").matchAll(/<tr\b[^>]*class=["'][^"']*table_body[^"']*["'][\s\S]*?<\/tr>/gi)]
+    .map((match) => match[0]);
+
+  return rows.map((row, index) => {
+    const linkMatch = row.match(/<a\b[^>]*class=["'][^"']*subject_link[^"']*["'][^>]*href=["']([^"']+)["'][\s\S]*?<\/a>/i);
+    const link = absolutizeUrl(linkMatch?.[1] || "", source.url);
+    const linkHtml = linkMatch?.[0] || "";
+    const title = stripHtml(linkHtml.match(/<strong\b[^>]*class=["'][^"']*text_over[^"']*["'][^>]*>([\s\S]*?)<\/strong>/i)?.[1] || "");
+    const commentCount = parseCount(linkHtml.match(/class=["'][^"']*num_reply[^"']*["'][^>]*>\s*\(?([\d,.만천]+)/i)?.[1]);
+    const recommendCount = parseCount(row.match(/<td\b[^>]*class=["'][^"']*recomd[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)?.[1]);
+    const viewCount = parseCount(row.match(/<td\b[^>]*class=["'][^"']*hit[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)?.[1]);
+    const timeLabel = stripHtml(row.match(/<td\b[^>]*class=["'][^"']*time[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)?.[1] || "");
+    const boardName = inferRuliwebBoardName(link);
+
+    return {
+      sourceRank: index + 1,
+      title,
+      link,
+      img: "",
+      viewCount,
+      recommendCount,
+      commentCount,
+      communityName: boardName ? `루리웹 ${boardName}` : source.siteName,
+      boardName: boardName || source.label,
+      publishedAt: timeLabel ? parseKoreanDate(timeLabel) : new Date().toISOString(),
+      rankingBasis: `${source.label} 공식 목록`,
+    };
+  }).filter((item) => item.title && item.link);
+}
+
+function parsePpomppuHot(html, source) {
+  const rows = [...String(html || "").matchAll(/<tr\b[^>]*class=["'][^"']*baseList[^"']*["'][\s\S]*?<\/tr>/gi)]
+    .map((match) => match[0]);
+
+  return rows.map((row, index) => {
+    const titleLinks = [...row.matchAll(/<a\b[^>]*class=["'][^"']*baseList-title[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+    const titleMatch = titleLinks.at(-1);
+    const link = absolutizeUrl(titleMatch?.[1] || "", source.url);
+    const title = stripHtml(titleMatch?.[2] || "");
+    const boardName = stripHtml(row.match(/<td\b[^>]*class=["'][^"']*baseList-numb[^"']*["'][\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/i)?.[1] || "");
+    const thumbnail = extractImageFromTag(row, source.url);
+    const commentCount = parseCount(row.match(/class=["'][^"']*list_comment\d*[^"']*["'][^>]*>\s*([\d,.만천]+)/i)?.[1]);
+    const dateCells = [...row.matchAll(/<td\b[^>]*class=["'][^"']*board_date[^"']*["'][^>]*>([\s\S]*?)<\/td>/gi)]
+      .map((match) => stripHtml(match[1]));
+    const recommendCount = parseCount(dateCells[1]?.split("-")[0] || "");
+    const viewCount = parseCount(dateCells[2] || "");
+
+    return {
+      sourceRank: index + 1,
+      title,
+      link,
+      img: thumbnail,
+      viewCount,
+      recommendCount,
+      commentCount,
+      communityName: boardName ? `뽐뿌 ${boardName}` : source.siteName,
+      boardName: boardName || source.label,
+      publishedAt: dateCells[0] ? parseKoreanDate(dateCells[0]) : new Date().toISOString(),
+      rankingBasis: `${source.label} 공식 목록`,
+    };
+  }).filter((item) => item.title && item.link);
 }
 
 function normalizeCafeArticle(item, range) {
