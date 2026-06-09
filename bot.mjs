@@ -36,12 +36,15 @@ const NAVER_CAFE_API_BASE =
 const NAVER_CAFE_ARTICLE_API_BASE = "https://article.cafe.naver.com/gw/v4/cafes";
 const DAUM_CAFE_TOP_URL = "https://m.cafe.daum.net/";
 const CHZZK_LIVES_API_URL = "https://api.chzzk.naver.com/service/v1/lives?size=20&sortType=POPULAR";
+const CHZZK_VIDEOS_API_URL = "https://api.chzzk.naver.com/service/v1/home/videos";
 const CHZZK_LIVE_PAGE_BASE = "https://chzzk.naver.com/live";
+const CHZZK_VIDEO_PAGE_BASE = "https://chzzk.naver.com/video";
 const SOOP_LIVES_API_URL =
   "https://live.sooplive.co.kr/api/main_broad_list_api.php?selectType=action&selectValue=all&orderType=view_cnt&pageNo=1&lang=ko_KR";
 const SOOP_PLAY_PAGE_BASE = "https://play.sooplive.com";
 const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token";
 const TWITCH_STREAMS_API_URL = "https://api.twitch.tv/helix/streams";
+const TWITCH_VIDEOS_API_URL = "https://api.twitch.tv/helix/videos";
 const TWITCH_PAGE_BASE = "https://www.twitch.tv";
 const YOUTUBE_SEARCH_API_URL = "https://www.googleapis.com/youtube/v3/search";
 const YOUTUBE_VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos";
@@ -51,6 +54,14 @@ const YOUTUBE_LIVE_QUERIES = parseListEnv(process.env.YOUTUBE_LIVE_QUERIES, [
   "게임 라이브",
   "음악 라이브",
 ]);
+const YOUTUBE_REPLAY_QUERIES = parseListEnv(process.env.YOUTUBE_REPLAY_QUERIES, [
+  "치지직 다시보기",
+  "SOOP 다시보기",
+  "트위치 다시보기",
+  "게임 다시보기",
+  "스트리머 다시보기",
+]);
+const YOUTUBE_REPLAY_RECENCY_DAYS = toPositiveInt(process.env.YOUTUBE_REPLAY_RECENCY_DAYS, 14);
 
 const YOUTUBE_BLOCKED_KEYWORDS = parseListEnv(process.env.YOUTUBE_BLOCKED_KEYWORDS, [
   "뉴스",
@@ -95,6 +106,7 @@ const SECOND_THUMBNAIL_CAFE_KEYWORDS = [
 
 const MEDIA_FEEDS = [
   { key: "mediaHot", label: "라이브HOT", category: "all" },
+  { key: "mediaReplay", label: "다시보기", category: "replay" },
   { key: "mediaGame", label: "게임", category: "game" },
   { key: "mediaTalk", label: "토크방송", category: "talk" },
   { key: "mediaMusic", label: "음악라디오", category: "music" },
@@ -202,26 +214,90 @@ const CAFE_RANGES = [
     minDaumItems: 3,
   },
   {
-    key: "monthly",
-    label: "월간TOP",
-    endpoint: "weekly",
-    description: "네이버 카페 주간 TOP과 다음 카페 인기글 후보를 장기 반응 중심으로 재정렬한 월간 TOP입니다.",
+    key: "cafeTravel",
+    label: "여행후기",
+    endpoints: ["realtime", "weekly"],
+    description: "네이버 카페와 다음 카페 인기글 후보 중 여행 후기 반응이 높은 글입니다.",
     includeDaum: true,
-    sourceLimit: 140,
-    scoreMode: "monthly",
-    minDaumItems: 3,
+    sourceLimit: 220,
+    scoreMode: "weekly",
+    filterCategory: "travel",
+    minDaumItems: 1,
   },
   {
-    key: "yearly",
-    label: "연간TOP",
-    endpoint: "weekly",
-    description: "네이버 카페 주간 TOP과 다음 카페 인기글 후보를 누적 반응 중심으로 재정렬한 연간 TOP입니다.",
+    key: "cafeFood",
+    label: "맛집리뷰",
+    endpoints: ["realtime", "weekly"],
+    description: "네이버 카페와 다음 카페 인기글 후보 중 맛집·카페 리뷰 반응이 높은 글입니다.",
     includeDaum: true,
-    sourceLimit: 200,
-    scoreMode: "yearly",
-    minDaumItems: 3,
+    sourceLimit: 220,
+    scoreMode: "weekly",
+    filterCategory: "food",
+    minDaumItems: 1,
   },
 ];
+
+const CAFE_CATEGORY_RULES = {
+  travel: [
+    "여행",
+    "여행후기",
+    "여행기",
+    "국내여행",
+    "해외여행",
+    "제주",
+    "제주도",
+    "강릉",
+    "부산",
+    "속초",
+    "경주",
+    "여수",
+    "캠핑",
+    "차박",
+    "숙소",
+    "호텔",
+    "리조트",
+    "항공",
+    "공항",
+    "비행기",
+    "일본",
+    "도쿄",
+    "오사카",
+    "후쿠오카",
+    "태국",
+    "베트남",
+    "유럽",
+    "코스",
+    "투어",
+  ],
+  food: [
+    "맛집",
+    "맛집리뷰",
+    "맛집후기",
+    "카페",
+    "디저트",
+    "빵",
+    "베이커리",
+    "브런치",
+    "식당",
+    "레스토랑",
+    "오마카세",
+    "스시",
+    "초밥",
+    "라멘",
+    "국밥",
+    "고기",
+    "삼겹살",
+    "떡볶이",
+    "김밥",
+    "치킨",
+    "피자",
+    "먹방",
+    "요리",
+    "음식",
+    "메뉴",
+    "런치",
+  ],
+};
 
 const COMMUNITY_SOURCES = [
   {
@@ -250,6 +326,14 @@ const COMMUNITY_SOURCES = [
     parser: parseRuliwebBest,
   },
   {
+    key: "ruliwebHotDeal",
+    label: "루리웹 핫딜",
+    siteName: "루리웹",
+    url: "https://bbs.ruliweb.com/market/board/1020",
+    referer: "https://bbs.ruliweb.com/market/board/1020",
+    parser: parseRuliwebBest,
+  },
+  {
     key: "ppomppuHot",
     label: "뽐뿌 HOT",
     siteName: "뽐뿌",
@@ -258,16 +342,52 @@ const COMMUNITY_SOURCES = [
     encoding: "euc-kr",
     parser: parsePpomppuHot,
   },
+  {
+    key: "instizGreen",
+    label: "인스티즈 초록글",
+    siteName: "인스티즈",
+    url: "https://www.instiz.net/pt",
+    referer: "https://www.instiz.net/pt",
+    parser: parseInstizGreen,
+  },
 ];
 
 const COMMUNITY_FEEDS = [
   { key: "communityIssue", label: "이슈", category: "issue" },
   { key: "communityHumor", label: "유머", category: "humor" },
   { key: "communityEntertain", label: "방송연예", category: "entertainment" },
-  { key: "communityInfo", label: "정보후기", category: "info" },
+  { key: "communityEvent", label: "이벤트정보", category: "event" },
 ];
 
 const COMMUNITY_CATEGORY_RULES = {
+  event: [
+    "이벤트",
+    "행사",
+    "축제",
+    "전시",
+    "공연",
+    "팝업",
+    "티켓",
+    "예매",
+    "사전예약",
+    "예약",
+    "신청",
+    "모집",
+    "체험단",
+    "응모",
+    "당첨",
+    "쿠폰",
+    "무료",
+    "배포",
+    "할인",
+    "세일",
+    "특가",
+    "핫딜",
+    "혜택",
+    "굿즈",
+    "출시",
+    "오픈",
+  ],
   humor: [
     "싱글벙글",
     "웃긴",
@@ -475,11 +595,12 @@ async function fetchCafeTrend(range) {
   });
 
   const allArticles = dedupeItems(sourceResults.flat()).filter((item) => item.title && item.link);
+  const scopedArticles = filterCafeArticlesByCategory(allArticles, range.filterCategory);
   const recentArticles =
     range.key === "daily"
-      ? allArticles.filter((item) => ageInHours(item.publishedAt) <= RECENCY_HOURS)
-      : allArticles;
-  const articlePool = recentArticles.length >= MAX_ITEMS ? recentArticles : allArticles;
+      ? scopedArticles.filter((item) => ageInHours(item.publishedAt) <= RECENCY_HOURS)
+      : scopedArticles;
+  const articlePool = recentArticles.length >= MAX_ITEMS ? recentArticles : scopedArticles;
 
   const articles = articlePool
     .map((item) => ({
@@ -506,7 +627,7 @@ async function fetchCafeTrend(range) {
     .map((item, index) => toPublicCafeTrendItem(item, index, range));
 
   console.log(
-    `  - 통합 후보 ${articles.length}개, 본문첫이미지 ${
+    `  - 통합 후보 ${articles.length}개${range.filterCategory ? ` (${range.label} 필터 적용)` : ""}, 본문첫이미지 ${
       enrichedItems.filter((item) => item.firstImage).length
     }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
   );
@@ -578,7 +699,7 @@ async function fetchAggregateTrend({ key, label, type, sources, fallbackImage })
 }
 
 async function fetchCommunityTrendBuckets() {
-  console.log("\n[커뮤니티 인기] 디시인사이드 실베 카테고리별 수집");
+  console.log("\n[커뮤니티 인기] 5개 커뮤니티 공식 인기글 카테고리별 수집");
 
   const sourceItems = await fetchCommunitySourceItems();
   enforceRequiredCommunitySource(sourceItems);
@@ -613,8 +734,7 @@ async function fetchCommunityTrendBuckets() {
 
   for (const feed of COMMUNITY_FEEDS) {
     const categoryItems = rankedItems.filter((item) => item.communityCategory === feed.category);
-    const topItems = categoryItems
-      .slice(0, MAX_ITEMS)
+    const topItems = selectBalancedTopItems(categoryItems, MAX_ITEMS)
       .map((item, index) => toPublicTrendItem(item, index, "community", FALLBACK_IMAGES.community));
 
     buckets[feed.key] = topItems;
@@ -638,7 +758,7 @@ function enforceRequiredCommunitySource(items) {
   if (!REQUIRE_COMMUNITY_SOURCE || items.length > 0) return;
 
   throw new Error(
-    "디시인사이드 실베 수집 결과가 0개입니다. 기존 Firebase 커뮤니티 데이터를 지우지 않기 위해 저장을 중단합니다. " +
+    "커뮤니티 인기글 수집 결과가 0개입니다. 기존 Firebase 커뮤니티 데이터를 지우지 않기 위해 저장을 중단합니다. " +
       "임시로 부분 저장을 허용하려면 REQUIRE_COMMUNITY_SOURCE=0으로 설정하세요."
   );
 }
@@ -683,8 +803,14 @@ async function fetchCommunitySourceItems() {
     }
   });
 
-  const items = dedupeItems(pageResults.flat()).slice(0, COMMUNITY_SOURCE_ITEM_LIMIT);
-  console.log(`  - 디시인사이드 실베: ${items.length}개`);
+  const items = selectSourceBalancedCandidates(
+    dedupeItems(pageResults.flat()),
+    COMMUNITY_SOURCE_ITEM_LIMIT
+  );
+  const sourceCounts = COMMUNITY_SOURCES
+    .map((source) => `${source.label} ${items.filter((item) => item.sourceKey === source.key).length}개`)
+    .join(", ");
+  console.log(`  - 통합 커뮤니티 후보: ${items.length}개 (${sourceCounts})`);
   return items;
 }
 
@@ -711,6 +837,7 @@ async function fetchMediaTrendBuckets() {
 
   const rawMediaItems = sourceResults.flat();
   enforceRequiredMediaSources(rawMediaItems);
+  const replayItems = await fetchMediaReplayRankings(rawMediaItems);
 
   const rankedItems = dedupeItems(rawMediaItems)
     .map((item) => ({
@@ -725,8 +852,12 @@ async function fetchMediaTrendBuckets() {
   const buckets = {};
   for (const feed of MEDIA_FEEDS) {
     const categoryItems =
-      feed.category === "all" ? rankedItems : rankedItems.filter((item) => item.mediaCategory === feed.category);
-    const topItems = selectMediaTopItems(categoryItems)
+      feed.category === "replay"
+        ? replayItems
+        : feed.category === "all"
+          ? rankedItems
+          : rankedItems.filter((item) => item.mediaCategory === feed.category);
+    const topItems = (feed.category === "replay" ? selectBalancedTopItems(categoryItems, MAX_ITEMS) : selectMediaTopItems(categoryItems))
       .map((item, index) => toPublicTrendItem(item, index, "media", FALLBACK_IMAGES.mediaTrend));
 
     buckets[feed.key] = topItems;
@@ -740,12 +871,43 @@ async function fetchMediaTrendBuckets() {
   return buckets;
 }
 
+async function fetchMediaReplayRankings(liveItems) {
+  console.log("  - 다시보기 후보 수집");
+
+  const sourceFetchers = [
+    { label: "치지직 VOD", fetcher: fetchChzzkReplayRankings },
+    { label: "YouTube 완료 라이브", fetcher: fetchYoutubeReplayRankings },
+    { label: "Twitch VOD", fetcher: () => fetchTwitchReplayRankings(liveItems) },
+  ];
+
+  const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
+    try {
+      const items = await source.fetcher();
+      console.log(`    · ${source.label}: ${items.length}개`);
+      return items;
+    } catch (error) {
+      console.warn(`    · ${source.label} 수집 실패: ${error.message}`);
+      return [];
+    }
+  });
+
+  return dedupeItems(sourceResults.flat())
+    .map((item) => ({
+      ...item,
+      type: "media",
+      mediaCategory: "replay",
+      trendScore: calculateReplayTrendScore(item),
+    }))
+    .sort(compareReplayTrendItems)
+    .slice(0, Math.max(YOUTUBE_SOURCE_ITEM_LIMIT, MAX_ITEMS * 3));
+}
+
 function enforceRequiredMediaSources(items) {
   if (!REQUIRE_MEDIA_API_SOURCES) return;
 
   const missing = [];
-  if (!items.some(isTwitchItem)) missing.push("트위치");
-  if (!items.some(isYoutubeItem)) missing.push("유튜브");
+  if (process.env.REQUIRE_TWITCH_SOURCE !== "0" && !items.some(isTwitchItem)) missing.push("트위치");
+  if (process.env.REQUIRE_YOUTUBE_SOURCE === "1" && !items.some(isYoutubeItem)) missing.push("유튜브");
 
   if (!missing.length) return;
 
@@ -1036,6 +1198,214 @@ async function fetchYoutubeLiveRankings() {
     .filter(Boolean);
 }
 
+async function fetchYoutubeReplayRankings() {
+  const apiKey = process.env.YOUTUBE_API_KEY || "";
+  if (!apiKey) {
+    console.warn("  - YouTube API 키가 없어 다시보기를 건너뜁니다.");
+    return [];
+  }
+
+  const publishedAfter = new Date(Date.now() - YOUTUBE_REPLAY_RECENCY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const perQueryLimit = Math.min(8, Math.max(3, Math.ceil(YOUTUBE_SOURCE_ITEM_LIMIT / YOUTUBE_REPLAY_QUERIES.length)));
+  const searchResults = await mapLimit(YOUTUBE_REPLAY_QUERIES, SOURCE_CONCURRENCY, async (query) => {
+    const searchUrl = new URL(YOUTUBE_SEARCH_API_URL);
+    searchUrl.searchParams.set("part", "snippet");
+    searchUrl.searchParams.set("type", "video");
+    searchUrl.searchParams.set("eventType", "completed");
+    searchUrl.searchParams.set("order", "viewCount");
+    searchUrl.searchParams.set("regionCode", "KR");
+    searchUrl.searchParams.set("relevanceLanguage", "ko");
+    searchUrl.searchParams.set("publishedAfter", publishedAfter);
+    searchUrl.searchParams.set("maxResults", String(perQueryLimit));
+    searchUrl.searchParams.set("q", query);
+    searchUrl.searchParams.set("key", apiKey);
+
+    const response = await fetchJsonWithHeaders(searchUrl.toString());
+    return (response?.items || []).map((item) => ({ ...item, youtubeQuery: query }));
+  });
+
+  const searchItems = dedupeYoutubeSearchItems(searchResults.flat()).slice(0, YOUTUBE_SOURCE_ITEM_LIMIT);
+  const videoIds = uniqueCompact(searchItems.map((item) => item?.id?.videoId));
+  if (videoIds.length === 0) return [];
+  const queryByVideoId = new Map(searchItems.map((item) => [item.id.videoId, item.youtubeQuery || ""]));
+
+  const videosUrl = new URL(YOUTUBE_VIDEOS_API_URL);
+  videosUrl.searchParams.set("part", "snippet,statistics,contentDetails,liveStreamingDetails");
+  videosUrl.searchParams.set("id", videoIds.join(","));
+  videosUrl.searchParams.set("key", apiKey);
+
+  const videosResponse = await fetchJsonWithHeaders(videosUrl.toString());
+  const videoMap = new Map((videosResponse?.items || []).map((item) => [item.id, item]));
+
+  return videoIds
+    .map((videoId, index) => {
+      const item = videoMap.get(videoId);
+      if (!item?.id) return null;
+
+      const snippet = item.snippet || {};
+      if (shouldExcludeYoutubeReplay(snippet)) return null;
+      const query = queryByVideoId.get(videoId) || "";
+      const thumbnail =
+        snippet.thumbnails?.maxres?.url ||
+        snippet.thumbnails?.high?.url ||
+        snippet.thumbnails?.medium?.url ||
+        snippet.thumbnails?.default?.url ||
+        "";
+      const watchUrl = new URL(YOUTUBE_WATCH_BASE);
+      watchUrl.searchParams.set("v", item.id);
+
+      return {
+        sourceRank: index + 1,
+        title: stripHtml(snippet.title),
+        link: watchUrl.toString(),
+        previewUrl: "",
+        previewType: "image",
+        img: normalizeImageUrl(thumbnail, "https://www.youtube.com/"),
+        thumbnail: normalizeImageUrl(thumbnail, "https://www.youtube.com/"),
+        platformName: "유튜브",
+        source: "유튜브",
+        siteName: "유튜브",
+        boardName: inferYoutubeBoardName(query, snippet.title, "다시보기"),
+        sourceKey: "youtubeReplay",
+        sourceUrl: "https://www.youtube.com/",
+        channelName: stripHtml(snippet.channelTitle || "YouTube"),
+        viewerCount: 0,
+        concurrentUserCount: 0,
+        viewCount: toNumber(item.statistics?.viewCount),
+        recommendCount: toNumber(item.statistics?.likeCount),
+        commentCount: toNumber(item.statistics?.commentCount),
+        viewTime: "다시보기",
+        publishedLabel: "다시보기",
+        publishedAt: snippet.publishedAt || item.liveStreamingDetails?.actualEndTime || new Date().toISOString(),
+        rankingBasis: "YouTube Data API 완료 라이브 조회수 랭킹",
+        liveId: item.id,
+        channelId: snippet.channelId || "",
+        tags: uniqueCompact([query, snippet.channelTitle, "다시보기"]),
+      };
+    })
+    .filter(Boolean);
+}
+
+async function fetchChzzkReplayRankings() {
+  const response = await fetchJsonWithHeaders(CHZZK_VIDEOS_API_URL, {
+    headers: {
+      ...basicBrowserHeaders(),
+      Referer: "https://chzzk.naver.com/videos",
+      Origin: "https://chzzk.naver.com",
+    },
+  });
+  const items = response?.content?.data || [];
+
+  return items
+    .filter((item) => item?.videoNo && item.videoTitle && !item.adult && toNumber(item.readCount) > 0)
+    .map((item, index) => {
+      const channel = item.channel || {};
+      const thumbnail = normalizeImageUrl(item.thumbnailImageUrl, "https://chzzk.naver.com/");
+      const videoNo = item.videoNo || "";
+
+      return {
+        sourceRank: index + 1,
+        title: stripHtml(item.videoTitle),
+        link: videoNo ? `${CHZZK_VIDEO_PAGE_BASE}/${encodeURIComponent(videoNo)}` : "https://chzzk.naver.com/videos",
+        previewUrl: "",
+        previewType: "image",
+        img: thumbnail,
+        thumbnail,
+        platformName: "치지직",
+        source: "치지직",
+        siteName: "치지직",
+        boardName: item.videoCategoryValue || item.videoType || "다시보기",
+        sourceKey: "chzzkReplay",
+        sourceUrl: "https://chzzk.naver.com/videos",
+        channelName: stripHtml(channel.channelName || "치지직"),
+        viewerCount: 0,
+        concurrentUserCount: 0,
+        viewCount: toNumber(item.readCount),
+        recommendCount: 0,
+        commentCount: 0,
+        viewTime: formatDurationLabel(item.duration) || "다시보기",
+        publishedLabel: "다시보기",
+        publishedAt: item.publishDateAt ? new Date(Number(item.publishDateAt)).toISOString() : parseKoreanDate(item.publishDate),
+        rankingBasis: "치지직 공개 VOD 조회수 랭킹",
+        liveId: item.videoId || videoNo,
+        channelId: channel.channelId || item.channelId || "",
+        tags: uniqueCompact([item.videoType, item.videoCategoryValue, ...(item.tags || []), "다시보기"]),
+      };
+    })
+    .sort(compareReplayTrendItems)
+    .slice(0, Math.max(MAX_ITEMS * 2, 20));
+}
+
+async function fetchTwitchReplayRankings(liveItems = []) {
+  const clientId = process.env.TWITCH_CLIENT_ID || "";
+  const clientSecret = process.env.TWITCH_CLIENT_SECRET || "";
+  if (!clientId || !clientSecret) {
+    console.warn("  - Twitch API 키가 없어 다시보기를 건너뜁니다.");
+    return [];
+  }
+
+  const channelIds = uniqueCompact(
+    liveItems
+      .filter(isTwitchItem)
+      .map((item) => item.channelId || item.userId)
+  ).slice(0, 8);
+  if (channelIds.length === 0) return [];
+
+  const token = await fetchTwitchAppAccessToken(clientId, clientSecret);
+  const videoGroups = await mapLimit(channelIds, SOURCE_CONCURRENCY, async (channelId) => {
+    const url = new URL(TWITCH_VIDEOS_API_URL);
+    url.searchParams.set("user_id", channelId);
+    url.searchParams.set("first", "5");
+    url.searchParams.set("type", "archive");
+    url.searchParams.set("sort", "views");
+    url.searchParams.set("period", "week");
+
+    const response = await fetchJsonWithHeaders(url.toString(), {
+      headers: {
+        ...basicBrowserHeaders(),
+        "Client-Id": clientId,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    return (response?.data || []).map((item) => ({
+      sourceRank: 999,
+      title: stripHtml(item.title),
+      link: item.url || `${TWITCH_PAGE_BASE}/${encodeURIComponent(item.user_name || "")}`,
+      previewUrl: "",
+      previewType: "image",
+      img: normalizeTwitchThumbnail(item.thumbnail_url),
+      thumbnail: normalizeTwitchThumbnail(item.thumbnail_url),
+      platformName: "트위치",
+      source: "트위치",
+      siteName: "트위치",
+      boardName: item.type === "archive" ? "다시보기" : item.type || "VOD",
+      sourceKey: "twitchReplay",
+      sourceUrl: "https://www.twitch.tv/videos",
+      channelName: stripHtml(item.user_name || "Twitch"),
+      viewerCount: 0,
+      concurrentUserCount: 0,
+      viewCount: toNumber(item.view_count),
+      recommendCount: 0,
+      commentCount: 0,
+      viewTime: item.duration || "다시보기",
+      publishedLabel: "다시보기",
+      publishedAt: item.published_at || item.created_at || new Date().toISOString(),
+      rankingBasis: "Twitch Helix Videos API 주간 조회수 랭킹",
+      liveId: item.id,
+      channelId: item.user_id,
+      tags: uniqueCompact([item.type, "다시보기"]),
+    }));
+  });
+
+  return videoGroups
+    .flat()
+    .filter((item) => item.title && item.link)
+    .sort((a, b) => toNumber(b.viewCount) - toNumber(a.viewCount))
+    .map((item, index) => ({ ...item, sourceRank: index + 1 }))
+    .slice(0, Math.max(MAX_ITEMS * 2, 20));
+}
+
 async function enrichCafeArticle(item) {
   if (item.sourceKey === "daumCafeTop") return enrichDaumCafeArticle(item);
   return enrichNaverCafeArticle(item);
@@ -1184,8 +1554,10 @@ async function fetchNaverCafePopular(endpoint) {
 }
 
 async function fetchNaverCafeSource(range) {
-  const rawItems = await fetchNaverCafePopular(range.endpoint);
-  return rawItems
+  const endpoints = range.endpoints?.length ? range.endpoints : [range.endpoint || "realtime"];
+  const rawGroups = await mapLimit(endpoints, SOURCE_CONCURRENCY, (endpoint) => fetchNaverCafePopular(endpoint));
+  return rawGroups
+    .flat()
     .filter((entry) => entry?.type === "ARTICLE" && entry.item)
     .map((entry) => normalizeCafeArticle(entry.item, range))
     .filter((item) => item.title && item.link && item.readCount > 0)
@@ -1324,9 +1696,10 @@ function parseDcinsideBestMobile(html, source) {
 }
 
 function parseTheqooHot(html, source) {
-  const rows = [...String(html || "").matchAll(/<tr\b[^>]*data-document_srl=["'][^"']+["'][\s\S]*?<\/tr>/gi)]
+  const tbody = String(html || "").match(/<tbody\b[^>]*class=["'][^"']*hide_notice[^"']*["'][^>]*>([\s\S]*?)<\/tbody>/i)?.[1] || String(html || "");
+  const rows = [...tbody.matchAll(/<tr\b[\s\S]*?<\/tr>/gi)]
     .map((match) => match[0])
-    .filter((row) => !/class=["'][^"']*notice/i.test(row));
+    .filter((row) => !/class=["'][^"']*notice/i.test(row) && /href=["'][^"']*\/hot\/\d+/i.test(row));
 
   return rows.map((row, index) => {
     const titleCell = row.match(/<td\b[^>]*class=["'][^"']*title[^"']*["'][\s\S]*?<\/td>/i)?.[0] || "";
@@ -1336,7 +1709,9 @@ function parseTheqooHot(html, source) {
     const category = stripHtml(row.match(/<td\b[^>]*class=["'][^"']*cate[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)?.[1] || "");
     const commentCount = parseCount(titleCell.match(/class=["'][^"']*replyNum[^"']*["'][^>]*>\s*([\d,.만천]+)/i)?.[1]);
     const timeLabel = stripHtml(row.match(/<td\b[^>]*class=["'][^"']*time[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)?.[1] || "");
-    const viewCount = parseCount(row.match(/<td\b[^>]*class=["'][^"']*m_no[^"']*["'][^>]*>\s*([\d,.만천]+)/gi)?.[1]);
+    const numberCells = [...row.matchAll(/<td\b[^>]*class=["'][^"']*m_no[^"']*["'][^>]*>([\s\S]*?)<\/td>/gi)]
+      .map((match) => stripHtml(match[1]));
+    const viewCount = parseCount(numberCells.at(-1));
 
     return {
       sourceRank: index + 1,
@@ -1356,13 +1731,21 @@ function parseTheqooHot(html, source) {
 
 function parseRuliwebBest(html, source) {
   const rows = [...String(html || "").matchAll(/<tr\b[^>]*class=["'][^"']*table_body[^"']*["'][\s\S]*?<\/tr>/gi)]
-    .map((match) => match[0]);
+    .map((match) => match[0])
+    .filter((row) => !/class=["'][^"']*\bnotice\b[^"']*["']/i.test(row));
 
   return rows.map((row, index) => {
     const linkMatch = row.match(/<a\b[^>]*class=["'][^"']*subject_link[^"']*["'][^>]*href=["']([^"']+)["'][\s\S]*?<\/a>/i);
     const link = absolutizeUrl(linkMatch?.[1] || "", source.url);
     const linkHtml = linkMatch?.[0] || "";
-    const title = stripHtml(linkHtml.match(/<strong\b[^>]*class=["'][^"']*text_over[^"']*["'][^>]*>([\s\S]*?)<\/strong>/i)?.[1] || "");
+    const cleanTitleHtml = linkHtml
+      .replace(/<a\b[^>]*class=["'][^"']*num_reply[^"']*["'][\s\S]*?<\/a>/gi, " ")
+      .replace(/<i\b[\s\S]*?<\/i>/gi, " ");
+    const title = stripHtml(
+      cleanTitleHtml.match(/<strong\b[^>]*class=["'][^"']*text_over[^"']*["'][^>]*>([\s\S]*?)<\/strong>/i)?.[1] ||
+        cleanTitleHtml.match(/<strong\b[^>]*>([\s\S]*?)<\/strong>/i)?.[1] ||
+        cleanTitleHtml
+    );
     const commentCount = parseCount(linkHtml.match(/class=["'][^"']*num_reply[^"']*["'][^>]*>\s*\(?([\d,.만천]+)/i)?.[1]);
     const recommendCount = parseCount(row.match(/<td\b[^>]*class=["'][^"']*recomd[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)?.[1]);
     const viewCount = parseCount(row.match(/<td\b[^>]*class=["'][^"']*hit[^"']*["'][^>]*>([\s\S]*?)<\/td>/i)?.[1]);
@@ -1383,6 +1766,22 @@ function parseRuliwebBest(html, source) {
       rankingBasis: `${source.label} 공식 목록`,
     };
   }).filter((item) => item.title && item.link);
+}
+
+function inferRuliwebBoardName(link) {
+  try {
+    const url = new URL(link);
+    const text = `${url.pathname} ${url.search}`.toLowerCase();
+    if (text.includes("humor")) return "유머";
+    if (text.includes("game")) return "게임";
+    if (text.includes("market")) return "핫딜";
+    if (text.includes("ainfo") || text.includes("book")) return "애니/책";
+    if (text.includes("news") || text.includes("userinfo")) return "정보";
+    if (text.includes("community")) return "커뮤니티";
+    return "베스트";
+  } catch {
+    return "베스트";
+  }
 }
 
 function parsePpomppuHot(html, source) {
@@ -1413,6 +1812,41 @@ function parsePpomppuHot(html, source) {
       communityName: boardName ? `뽐뿌 ${boardName}` : source.siteName,
       boardName: boardName || source.label,
       publishedAt: dateCells[0] ? parseKoreanDate(dateCells[0]) : new Date().toISOString(),
+      rankingBasis: `${source.label} 공식 목록`,
+    };
+  }).filter((item) => item.title && item.link);
+}
+
+function parseInstizGreen(html, source) {
+  const rows = [...String(html || "").matchAll(/<tr\b[^>]*id=["']detour["'][\s\S]*?<\/tr>/gi)]
+    .map((match) => match[0]);
+
+  return rows.map((row, index) => {
+    const category = stripHtml(
+      row.match(/<span\b[^>]*class=["'][^"']*list_category[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || ""
+    );
+    const subjectCell = row.match(/<td\b[^>]*class=["'][^"']*listsubject[^"']*["'][\s\S]*?<\/td>/i)?.[0] || "";
+    const linkMatch = subjectCell.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const link = absolutizeUrl(linkMatch?.[1] || "", source.url);
+    const titleHtml = String(linkMatch?.[2] || "")
+      .replace(/<span\b[^>]*class=["'][^"']*cmt3?[^"']*["'][\s\S]*?<\/span>/gi, " ")
+      .replace(/<i\b[\s\S]*?<\/i>/gi, " ");
+    const title = stripHtml(titleHtml);
+    const commentCount = parseCount(subjectCell.match(/class=["'][^"']*cmt3?[^"']*["'][^>]*>\s*([\d,.만천]+)/i)?.[1]);
+    const cells = [...row.matchAll(/<td\b[^>]*class=["'][^"']*listno[^"']*["'][^>]*>([\s\S]*?)<\/td>/gi)]
+      .map((match) => stripHtml(match[1]));
+
+    return {
+      sourceRank: index + 1,
+      title,
+      link,
+      img: "",
+      viewCount: parseCount(cells[1]),
+      recommendCount: parseCount(cells[2]),
+      commentCount,
+      communityName: category ? `인스티즈 ${category}` : source.siteName,
+      boardName: category || source.label,
+      publishedAt: cells[0] ? parseKoreanDate(cells[0]) : new Date().toISOString(),
       rankingBasis: `${source.label} 공식 목록`,
     };
   }).filter((item) => item.title && item.link);
@@ -1485,6 +1919,7 @@ function toPublicCafeTrendItem(item, index, range) {
 }
 
 function toPublicTrendItem(item, index, type, fallbackImage) {
+  const isReplayMedia = type === "media" && (item.mediaCategory === "replay" || /Replay|VOD/i.test(item.sourceKey || ""));
   const base = {
     rank: index + 1,
     title: item.title,
@@ -1502,8 +1937,8 @@ function toPublicTrendItem(item, index, type, fallbackImage) {
     sourceRank: item.sourceRank,
     viewCount: toNumber(item.viewCount),
     readCount: toNumber(item.viewCount),
-    viewerCount: toNumber(item.viewerCount || item.concurrentUserCount || item.viewCount),
-    concurrentUserCount: toNumber(item.concurrentUserCount || item.viewerCount || item.viewCount),
+    viewerCount: isReplayMedia ? 0 : toNumber(item.viewerCount || item.concurrentUserCount || item.viewCount),
+    concurrentUserCount: isReplayMedia ? 0 : toNumber(item.concurrentUserCount || item.viewerCount || item.viewCount),
     recommendCount: toNumber(item.recommendCount),
     commentCount: toNumber(item.commentCount),
     previewUrl: item.previewUrl || item.livePreviewUrl || item.embedUrl || "",
@@ -1536,7 +1971,7 @@ function buildContentSummary(item, type) {
   const parts = [];
   if (item.siteName || item.source) parts.push(item.siteName || item.source);
   if (item.boardName) parts.push(item.boardName);
-  if (type === "media" && toNumber(item.viewerCount || item.viewCount) > 0) {
+  if (type === "media" && item.mediaCategory !== "replay" && toNumber(item.viewerCount || item.viewCount) > 0) {
     parts.push(`시청자 ${formatCountKo(item.viewerCount || item.viewCount)}`);
   } else if (item.viewCount > 0) {
     parts.push(`조회 ${formatCountKo(item.viewCount)}`);
@@ -1561,6 +1996,59 @@ function buildCafeArticleUrl(item) {
 
 function getCafeSourceLimit(range) {
   return toPositiveInt(range?.sourceLimit, SOURCE_ITEM_LIMIT);
+}
+
+function filterCafeArticlesByCategory(items, category) {
+  if (!category) return items;
+  return items
+    .filter((item) => matchesCafeCategory(item, category))
+    .sort((a, b) => cafeCategoryScore(b, category) - cafeCategoryScore(a, category) || compareCafeArticles(a, b));
+}
+
+function matchesCafeCategory(item, category) {
+  const keywords = CAFE_CATEGORY_RULES[category] || [];
+  if (keywords.length === 0) return true;
+  const text = getCafeCategoryText(item);
+  const titleText = normalizeCompactText(item.title);
+  return keywords.some((keyword) => {
+    const normalized = normalizeCompactText(keyword);
+    if (category === "food" && normalized === "카페") return titleText.includes(normalized);
+    return text.includes(normalized);
+  });
+}
+
+function cafeCategoryScore(item, category) {
+  const keywords = CAFE_CATEGORY_RULES[category] || [];
+  const text = getCafeCategoryText(item);
+  const matchScore = keywords.reduce(
+    (score, keyword) => {
+      const normalized = normalizeCompactText(keyword);
+      const matched =
+        category === "food" && normalized === "카페"
+          ? normalizeCompactText(item.title).includes(normalized)
+          : text.includes(normalized);
+      return score + (matched ? 1 : 0);
+    },
+    0
+  );
+  const reviewScore = /후기|리뷰|추천|모음|정리|코스|메뉴|가격|내돈내산/i.test(
+    [item.title, item.cafeName].filter(Boolean).join(" ")
+  )
+    ? 3
+    : 0;
+  const sourceScore = Math.max(0, 120 - normalizeRank(item.sourceRank || item.naverRank)) / 20;
+  return matchScore * 10 + reviewScore + sourceScore;
+}
+
+function getCafeCategoryText(item) {
+  return normalizeCompactText(
+    [
+      item.title,
+      item.cafeName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
 }
 
 function getCafeThumbnailImageIndex(item) {
@@ -1637,6 +2125,51 @@ function compareLiveTrendItems(a, b) {
     normalizeRank(a.sourceRank) - normalizeRank(b.sourceRank) ||
     Date.parse(a.publishedAt || 0) - Date.parse(b.publishedAt || 0)
   );
+}
+
+function compareReplayTrendItems(a, b) {
+  return (
+    toNumber(b.trendScore) - toNumber(a.trendScore) ||
+    toNumber(b.viewCount) - toNumber(a.viewCount) ||
+    toNumber(b.commentCount) - toNumber(a.commentCount) ||
+    normalizeRank(a.sourceRank) - normalizeRank(b.sourceRank) ||
+    Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0)
+  );
+}
+
+function selectSourceBalancedCandidates(items, maxItems) {
+  const orderedSources = uniqueCompact([
+    ...COMMUNITY_SOURCES.map((source) => source.key),
+    ...items.map((item) => item.sourceKey),
+  ]).filter((sourceKey) => items.some((item) => item.sourceKey === sourceKey));
+  if (orderedSources.length <= 1) return items.slice(0, maxItems);
+
+  const minimumPerSource = Math.max(1, Math.floor(maxItems / Math.max(orderedSources.length * 2, 1)));
+  const selected = [];
+  const selectedKeys = new Set();
+
+  const addItem = (item) => {
+    if (selected.length >= maxItems) return false;
+    const key = normalizeDedupeKey(item);
+    if (!key || selectedKeys.has(key)) return false;
+    selectedKeys.add(key);
+    selected.push(item);
+    return true;
+  };
+
+  for (const sourceKey of orderedSources) {
+    let sourceCount = 0;
+    for (const item of items.filter((candidate) => candidate.sourceKey === sourceKey)) {
+      if (sourceCount >= minimumPerSource) break;
+      if (addItem(item)) sourceCount += 1;
+    }
+  }
+
+  for (const item of items) {
+    if (!addItem(item) && selected.length >= maxItems) break;
+  }
+
+  return selected.slice(0, maxItems);
 }
 
 function selectBalancedTopItems(items, maxItems) {
@@ -1729,6 +2262,20 @@ function calculateLiveTrendScore(item) {
   const ageHours = ageInHours(item.publishedAt);
   const liveFreshnessScore = Math.max(0, 12 - ageHours) * 20;
   return viewerCount * 1000 + rankScore + liveFreshnessScore;
+}
+
+function calculateReplayTrendScore(item) {
+  const sourceRank = normalizeRank(item.sourceRank);
+  const rankScore = Math.max(0, SOURCE_ITEM_LIMIT + 1 - sourceRank) * 300;
+  const ageHours = ageInHours(item.publishedAt);
+  const recencyScore = Math.max(0, YOUTUBE_REPLAY_RECENCY_DAYS * 24 - ageHours) * 30;
+  return (
+    toNumber(item.viewCount) * 1.2 +
+    toNumber(item.recommendCount) * 60 +
+    toNumber(item.commentCount) * 35 +
+    rankScore +
+    recencyScore
+  );
 }
 
 function calculateCafeTrendScore(item, range = {}) {
@@ -1997,6 +2544,22 @@ function parseKoreanDate(value) {
     ).toISOString();
   }
 
+  const monthDayTime = text.match(/(\d{1,2})[./-](\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (monthDayTime) {
+    const date = new Date(
+      now.getFullYear(),
+      Number(monthDayTime[1]) - 1,
+      Number(monthDayTime[2]),
+      Number(monthDayTime[3]),
+      Number(monthDayTime[4]),
+      Number(monthDayTime[5] || 0)
+    );
+    if (date.getTime() - now.getTime() > 7 * 24 * 60 * 60 * 1000) {
+      date.setFullYear(date.getFullYear() - 1);
+    }
+    return date.toISOString();
+  }
+
   const shortDate = text.match(/(\d{2})[./-](\d{1,2})[./-](\d{1,2})/);
   if (shortDate) {
     return new Date(2000 + Number(shortDate[1]), Number(shortDate[2]) - 1, Number(shortDate[3])).toISOString();
@@ -2046,7 +2609,9 @@ function normalizeChzzkThumbnail(value) {
 function normalizeTwitchThumbnail(value) {
   const imageUrl = normalizeImageUrl(value, "https://www.twitch.tv/");
   if (!imageUrl) return "";
-  return imageUrl.replace(/\{width\}/g, "640").replace(/\{height\}/g, "360");
+  return imageUrl
+    .replace(/\{width\}|%\{width\}/g, "640")
+    .replace(/\{height\}|%\{height\}/g, "360");
 }
 
 function dedupeYoutubeSearchItems(items) {
@@ -2095,6 +2660,23 @@ function shouldExcludeYoutubeLive(snippet) {
   return isLikelyForeignBroadcast(titleAndChannel);
 }
 
+function shouldExcludeYoutubeReplay(snippet) {
+  const text = [
+    snippet?.title,
+    snippet?.description,
+    snippet?.channelTitle,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (!text) return true;
+  if (YOUTUBE_BLOCKED_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) return true;
+
+  const titleAndChannel = [snippet?.title, snippet?.channelTitle].filter(Boolean).join(" ");
+  return isLikelyForeignBroadcast(titleAndChannel);
+}
+
 function isLikelyForeignBroadcast(value) {
   const text = String(value || "");
   const hangulCount = (text.match(/[가-힣]/g) || []).length;
@@ -2122,7 +2704,7 @@ function classifyCommunityCategory(item) {
     .toLowerCase()
     .replace(/\s+/g, " ");
 
-  for (const category of ["humor", "entertainment", "info", "issue"]) {
+  for (const category of ["event", "humor", "entertainment", "issue"]) {
     const keywords = COMMUNITY_CATEGORY_RULES[category] || [];
     if (keywords.some((keyword) => sourceText.includes(keyword.toLowerCase()))) return category;
   }
@@ -2467,6 +3049,15 @@ function formatCountKo(value) {
     return `${compact}만`;
   }
   return number.toLocaleString("ko-KR");
+}
+
+function formatDurationLabel(seconds) {
+  const totalSeconds = toNumber(seconds);
+  if (totalSeconds <= 0) return "";
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}시간 ${minutes}분`;
+  return `${Math.max(1, minutes)}분`;
 }
 
 function uniqueCompact(values) {
