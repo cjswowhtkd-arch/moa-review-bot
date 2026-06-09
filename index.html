@@ -280,6 +280,8 @@
             overflow: hidden;
             background: #252932;
             border: 1px solid rgba(255, 255, 255, 0.08);
+            position: relative;
+            isolation: isolate;
         }
 
         .thumb-box img {
@@ -287,6 +289,31 @@
             height: 100%;
             object-fit: cover;
             display: block;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+
+        .media-preview {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+            background: #050609;
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(1.02);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+            z-index: 1;
+        }
+
+        .thumb-box.is-previewing img {
+            opacity: 0;
+            transform: scale(1.04);
+        }
+
+        .thumb-box.is-previewing .media-preview {
+            opacity: 1;
+            transform: scale(1);
         }
 
         .empty-state {
@@ -366,7 +393,7 @@
 
         <div class="summary-row">
             <span id="activeSummary">실시간HOT TOP 10</span>
-            <span id="activeSource">YouTube Charts 공식 랭킹</span>
+            <span id="activeSource">치지직,SOOP 시청자수</span>
         </div>
 
         <section class="grid-container" id="cardGrid">
@@ -387,14 +414,14 @@
         const sections = {
             mediaTrend: {
                 label: "미디어 트렌드",
-                source: "YouTube Charts 공식 랭킹",
+                source: "치지직,SOOP 시청자수",
                 empty: "미디어 트렌드 데이터 연결 준비 중입니다.",
                 feeds: [
                     {
                         key: "mediaTrends",
                         label: "미디어 트렌드",
-                        dataKeys: ["mediaTrends", "mediaTrend", "media", "youtubeTrends"],
-                        source: "YouTube Charts 공식 랭킹"
+                        dataKeys: ["mediaTrends", "mediaTrend", "media", "liveTrends"],
+                        source: "치지직,SOOP 시청자수"
                     }
                 ]
             },
@@ -541,6 +568,11 @@
             };
 
             thumbBox.appendChild(img);
+
+            if (sectionKey === "mediaTrend" && view.previewUrl) {
+                attachMediaPreview(card, thumbBox, view);
+            }
+
             card.append(copy, thumbBox);
             return card;
         }
@@ -549,6 +581,8 @@
             const source = getItemSource(item, sectionKey);
             const baseTitle = firstText(item.title, item.subject, item.name, item.videoTitle, item.contentTitle, "제목 없음");
             const title = baseTitle;
+            const link = firstText(item.link, item.url, item.articleUrl, item.watchUrl, item.contentUrl);
+            const viewerCount = firstNumber(item.viewerCount, item.concurrentUserCount, item.currentViewCount);
             const viewCount = firstNumber(item.readCount, item.viewCount, item.views);
             const viewTime = firstText(item.viewTime, item.watchTime, item.duration, item.runtime, item.publishedLabel);
             const recommendCount = firstNumber(
@@ -563,7 +597,8 @@
             return {
                 rank: firstNumber(item.rank, item.naverRank) || index + 1,
                 title,
-                link: firstText(item.link, item.url, item.articleUrl, item.watchUrl, item.contentUrl),
+                link,
+                previewUrl: getMediaPreviewUrl(item, link, sectionKey),
                 img: firstText(
                     item.img,
                     item.thumbnail,
@@ -575,15 +610,51 @@
                     item.poster,
                     item.posterUrl
                 ),
-                meta: buildMeta(sectionKey, { source, viewCount, viewTime, recommendCount, commentCount })
+                meta: buildMeta(sectionKey, { source, viewerCount, viewCount, viewTime, recommendCount, commentCount })
             };
+        }
+
+        function attachMediaPreview(card, thumbBox, view) {
+            const preview = document.createElement("iframe");
+            preview.className = "media-preview";
+            preview.title = `${view.title} 실시간 미리보기`;
+            preview.loading = "lazy";
+            preview.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+            preview.referrerPolicy = "strict-origin-when-cross-origin";
+            preview.dataset.src = view.previewUrl;
+            thumbBox.classList.add("has-preview");
+            thumbBox.appendChild(preview);
+
+            let clearTimer = 0;
+            const showPreview = () => {
+                window.clearTimeout(clearTimer);
+                if (!preview.src) preview.src = preview.dataset.src;
+                thumbBox.classList.add("is-previewing");
+            };
+            const hidePreview = () => {
+                thumbBox.classList.remove("is-previewing");
+                window.clearTimeout(clearTimer);
+                clearTimer = window.setTimeout(() => {
+                    preview.removeAttribute("src");
+                }, 320);
+            };
+
+            thumbBox.addEventListener("mouseenter", showPreview);
+            thumbBox.addEventListener("mouseleave", hidePreview);
+            card.addEventListener("focusin", showPreview);
+            card.addEventListener("focusout", hidePreview);
         }
 
         function buildMeta(sectionKey, values) {
             const parts = [];
-            if (values.viewCount > 0) parts.push(`조회 ${formatCount(values.viewCount)}`);
-            if (sectionKey === "mediaTrend" && values.viewCount <= 0 && values.viewTime) {
-                parts.push(`조회시간 ${values.viewTime}`);
+            if (sectionKey === "mediaTrend") {
+                if (values.viewerCount > 0 || values.viewCount > 0) {
+                    parts.push(`시청자 ${formatCount(values.viewerCount || values.viewCount)}`);
+                } else if (values.viewTime) {
+                    parts.push(values.viewTime);
+                }
+            } else if (values.viewCount > 0) {
+                parts.push(`조회 ${formatCount(values.viewCount)}`);
             }
 
             if (sectionKey === "naverCafe") {
@@ -603,17 +674,40 @@
             }
 
             if (sectionKey === "mediaTrend") {
-                return firstText(
-                    item.platformName,
-                    item.channelName,
-                    item.source,
-                    item.siteName,
-                    item.boardName,
-                    sections[sectionKey].label
-                );
+                const platform = firstText(item.platformName, item.source, item.siteName);
+                const channel = firstText(item.channelName, item.boardName);
+                if (platform && channel && platform !== channel) return `${platform} · ${channel}`;
+                return firstText(platform, channel, sections[sectionKey].label);
             }
 
             return firstText(item.communityName, item.source, item.siteName, item.boardName, sections[sectionKey].label);
+        }
+
+        function getMediaPreviewUrl(item, link, sectionKey) {
+            if (sectionKey !== "mediaTrend") return "";
+
+            const explicitUrl = safeUrl(firstText(item.previewUrl, item.livePreviewUrl, item.embedUrl, item.playerUrl));
+            if (explicitUrl) return explicitUrl;
+
+            const target = safeUrl(link);
+            if (!target) return "";
+
+            try {
+                const url = new URL(target);
+                const parts = url.pathname.split("/").filter(Boolean);
+
+                if (/^(play|live)\.sooplive\.(com|co\.kr)$/.test(url.hostname) && parts.length >= 2) {
+                    return `https://play.sooplive.com/${encodeURIComponent(parts[0])}/${encodeURIComponent(parts[1])}/embed`;
+                }
+
+                if (url.hostname === "chzzk.naver.com" && parts[0] === "live" && parts[1]) {
+                    return `https://chzzk.naver.com/embed/live/${encodeURIComponent(parts[1])}?autoplay=1&muted=1`;
+                }
+            } catch {
+                return "";
+            }
+
+            return "";
         }
 
         function findDataList(keys) {
