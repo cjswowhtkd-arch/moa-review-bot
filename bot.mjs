@@ -49,8 +49,41 @@ const YOUTUBE_WATCH_BASE = "https://www.youtube.com/watch";
 const YOUTUBE_LIVE_QUERIES = parseListEnv(process.env.YOUTUBE_LIVE_QUERIES, [
   "라이브",
   "게임 라이브",
-  "뉴스 라이브",
   "음악 라이브",
+]);
+
+const YOUTUBE_BLOCKED_KEYWORDS = parseListEnv(process.env.YOUTUBE_BLOCKED_KEYWORDS, [
+  "뉴스",
+  "news",
+  "속보",
+  "breaking",
+  "보도",
+  "정치",
+  "국회",
+  "대통령",
+  "정부",
+  "주식",
+  "증시",
+  "경제",
+  "코인",
+  "bitcoin",
+  "crypto",
+  "cnn",
+  "bbc",
+  "fox news",
+  "al jazeera",
+  "sky news",
+  "msnbc",
+  "ytn",
+  "연합뉴스",
+  "mbcnews",
+  "sbs 뉴스",
+  "kbs news",
+  "jtbc news",
+  "채널a 뉴스",
+  "뉴스tv",
+  "24시간 뉴스",
+  "24/7 news",
 ]);
 
 const MEDIA_FEEDS = [
@@ -896,6 +929,7 @@ async function fetchYoutubeLiveRankings() {
       if (!item?.id) return null;
 
       const snippet = item.snippet || {};
+      if (shouldExcludeYoutubeLive(snippet)) return null;
       const viewerCount = toNumber(item.liveStreamingDetails?.concurrentViewers || item.statistics?.viewCount);
       const query = queryByVideoId.get(videoId) || "";
       const thumbnail =
@@ -1803,6 +1837,37 @@ function getYoutubeVideoCategoryId(query) {
   if (MEDIA_CATEGORY_RULES.music.some((keyword) => text.includes(keyword.toLowerCase()))) return "10";
   if (MEDIA_CATEGORY_RULES.game.some((keyword) => text.includes(keyword.toLowerCase()))) return "20";
   return "";
+}
+
+function shouldExcludeYoutubeLive(snippet) {
+  const text = [
+    snippet?.title,
+    snippet?.description,
+    snippet?.channelTitle,
+    snippet?.categoryId,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (!text) return true;
+  if (YOUTUBE_BLOCKED_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) return true;
+
+  const titleAndChannel = [snippet?.title, snippet?.channelTitle].filter(Boolean).join(" ");
+  return isLikelyForeignBroadcast(titleAndChannel);
+}
+
+function isLikelyForeignBroadcast(value) {
+  const text = String(value || "");
+  const hangulCount = (text.match(/[가-힣]/g) || []).length;
+  const latinCount = (text.match(/[A-Za-z]/g) || []).length;
+  const cjkCount = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
+
+  if (hangulCount >= 2) return false;
+  if (cjkCount > 0) return true;
+  if (latinCount >= 12 && hangulCount === 0) return true;
+
+  return hangulCount === 0;
 }
 
 function classifyCommunityCategory(item) {
