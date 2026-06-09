@@ -32,6 +32,7 @@ const ARTICLE_CONCURRENCY = toPositiveInt(process.env.ARTICLE_CONCURRENCY, 5);
 const SOURCE_CONCURRENCY = toPositiveInt(process.env.SOURCE_CONCURRENCY, 3);
 const RECENCY_HOURS = toPositiveInt(process.env.RECENCY_HOURS, 48);
 const EMBED_IMAGE_MAX_BYTES = toPositiveInt(process.env.EMBED_IMAGE_MAX_BYTES, 700000);
+const UPDATE_INTERVAL_MINUTES = toPositiveInt(process.env.UPDATE_INTERVAL_MINUTES, 60);
 const DRY_RUN = process.env.DRY_RUN === "1";
 
 const NAVER_CAFE_API_BASE =
@@ -676,7 +677,9 @@ async function startRobot() {
   }
   categoriesData.mediaTrends = categoriesData.mediaHot || [];
 
-  categoriesData.updatedAt = new Date().toISOString();
+  const updatedAt = new Date();
+  categoriesData.updatedAt = updatedAt.toISOString();
+  categoriesData._meta = buildRunMetadata(categoriesData, updatedAt);
 
   if (DRY_RUN) {
     console.log("\n[DRY_RUN] Firebase 전송 없이 수집 결과만 출력합니다.");
@@ -768,6 +771,37 @@ async function fetchCafeTrend(range) {
     }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
   );
   return topItems;
+}
+
+function buildRunMetadata(categoriesData, updatedAt) {
+  const feedKeys = [
+    ...CAFE_RANGES.map((range) => range.key),
+    ...COMMUNITY_FEEDS.map((feed) => feed.key),
+    "communityPopular",
+    ...MEDIA_FEEDS.map((feed) => feed.key),
+    "mediaTrends",
+  ];
+  const counts = Object.fromEntries(
+    feedKeys.map((key) => {
+      const items = Array.isArray(categoriesData[key]) ? categoriesData[key] : [];
+      return [
+        key,
+        {
+          count: items.length,
+          images: items.filter((item) => isDisplayableImage(item.img)).length,
+        },
+      ];
+    })
+  );
+
+  return {
+    updatedAt: updatedAt.toISOString(),
+    updatedAtKst: formatKstDateTime(updatedAt),
+    updateIntervalMinutes: UPDATE_INTERVAL_MINUTES,
+    schedule: `every ${UPDATE_INTERVAL_MINUTES} minutes`,
+    maxItemsPerCategory: MAX_ITEMS,
+    counts,
+  };
 }
 
 async function fetchAggregateTrend({ key, label, type, sources, fallbackImage }) {
@@ -3278,6 +3312,19 @@ function formatDurationLabel(seconds) {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   if (hours > 0) return `${hours}시간 ${minutes}분`;
   return `${Math.max(1, minutes)}분`;
+}
+
+function formatKstDateTime(date) {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 function uniqueCompact(values) {
