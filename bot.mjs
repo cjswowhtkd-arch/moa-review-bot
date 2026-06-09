@@ -86,6 +86,13 @@ const YOUTUBE_BLOCKED_KEYWORDS = parseListEnv(process.env.YOUTUBE_BLOCKED_KEYWOR
   "24/7 news",
 ]);
 
+const SECOND_THUMBNAIL_CAFE_KEYWORDS = [
+  "여성시대",
+  "이종격투기",
+  "subdued20club",
+  "ssaumjil",
+];
+
 const MEDIA_FEEDS = [
   { key: "mediaHot", label: "라이브HOT", category: "all" },
   { key: "mediaGame", label: "게임", category: "game" },
@@ -181,13 +188,38 @@ const CAFE_RANGES = [
     endpoint: "realtime",
     description: "네이버 카페와 다음 카페 실시간 공식 인기글 랭킹입니다.",
     includeDaum: true,
+    sourceLimit: 40,
+    minDaumItems: 2,
   },
   {
     key: "weekly",
     label: "주간TOP",
     endpoint: "weekly",
-    description: "네이버 카페 주간 TOP 공식 랭킹입니다.",
-    includeDaum: false,
+    description: "네이버 카페 주간 TOP과 다음 카페 공식 인기글 통합 랭킹입니다.",
+    includeDaum: true,
+    sourceLimit: 100,
+    scoreMode: "weekly",
+    minDaumItems: 3,
+  },
+  {
+    key: "monthly",
+    label: "월간TOP",
+    endpoint: "weekly",
+    description: "네이버 카페 주간 TOP과 다음 카페 인기글 후보를 장기 반응 중심으로 재정렬한 월간 TOP입니다.",
+    includeDaum: true,
+    sourceLimit: 140,
+    scoreMode: "monthly",
+    minDaumItems: 3,
+  },
+  {
+    key: "yearly",
+    label: "연간TOP",
+    endpoint: "weekly",
+    description: "네이버 카페 주간 TOP과 다음 카페 인기글 후보를 누적 반응 중심으로 재정렬한 연간 TOP입니다.",
+    includeDaum: true,
+    sourceLimit: 200,
+    scoreMode: "yearly",
+    minDaumItems: 3,
   },
 ];
 
@@ -427,20 +459,25 @@ async function fetchCafeTrend(range) {
   const articles = articlePool
     .map((item) => ({
       ...item,
-      trendScore: calculateCafeTrendScore(item),
+      trendScore: calculateCafeTrendScore(item, range),
     }))
-    .sort(compareCafeArticles)
-    .slice(0, Math.max(MAX_ITEMS * 2, MAX_ITEMS));
+    .sort(compareCafeArticles);
+  const candidateArticles = selectCafeItems(
+    articles,
+    range,
+    Math.max(MAX_ITEMS * 2, MAX_ITEMS),
+    Math.max(toNumber(range.minDaumItems) * 2, toNumber(range.minDaumItems))
+  );
 
-  const enrichedItems = await mapLimit(articles, ARTICLE_CONCURRENCY, enrichCafeArticle);
+  const enrichedItems = await mapLimit(candidateArticles, ARTICLE_CONCURRENCY, enrichCafeArticle);
 
-  const topItems = enrichedItems
+  const rankedItems = enrichedItems
     .map((item) => ({
       ...item,
-      trendScore: calculateCafeTrendScore(item),
+      trendScore: calculateCafeTrendScore(item, range),
     }))
-    .sort(compareCafeArticles)
-    .slice(0, MAX_ITEMS)
+    .sort(compareCafeArticles);
+  const topItems = selectCafeItems(rankedItems, range, MAX_ITEMS, toNumber(range.minDaumItems))
     .map((item, index) => toPublicCafeTrendItem(item, index, range));
 
   console.log(
@@ -1022,6 +1059,7 @@ async function fetchDaumCafeArticleDetail(item) {
   const firstImage = extractFirstImageFromHtml(html, {
     baseUrl: item.link,
     allowedHostIncludes: ["daumcdn.net"],
+    imageIndex: getCafeThumbnailImageIndex(item),
   });
   const meta = extractDaumCafeArticleMeta(html);
   const detail = {
@@ -1059,6 +1097,7 @@ async function fetchNaverCafeFirstImage(item) {
   const firstImage = extractFirstImageFromHtml(contentHtml, {
     baseUrl: item.link,
     allowedHostIncludes: ["pstatic.net", "naver.net"],
+    imageIndex: getCafeThumbnailImageIndex(item),
   });
 
   articleImageCache.set(cacheKey, firstImage);
@@ -1126,14 +1165,15 @@ async function fetchNaverCafeSource(range) {
     .map((entry) => normalizeCafeArticle(entry.item, range))
     .filter((item) => item.title && item.link && item.readCount > 0)
     .sort(compareCafeArticles)
-    .slice(0, SOURCE_ITEM_LIMIT);
+    .slice(0, getCafeSourceLimit(range));
 }
 
 async function fetchDaumCafeSource(range) {
   const html = await fetchText(DAUM_CAFE_TOP_URL, {
     referer: DAUM_CAFE_TOP_URL,
+    userAgent: MOBILE_USER_AGENT,
   });
-  return parseDaumCafePopular(html, range).slice(0, Math.max(SOURCE_ITEM_LIMIT, MAX_ITEMS));
+  return parseDaumCafePopular(html, range).slice(0, Math.max(getCafeSourceLimit(range), MAX_ITEMS));
 }
 
 function parseDaumCafePopular(html, range) {
@@ -1147,8 +1187,14 @@ function parseDaumCafePopular(html, range) {
       const title = stripHtml(
         row.match(/<strong\b[^>]*class=["'][^"']*popular-list__title[^"']*["'][^>]*>([\s\S]*?)<\/strong>/i)?.[1] || ""
       );
+      const rowText = stripHtml(row);
+      const classCafeName = cleanCafeName(
+        row.match(/<span\b[^>]*class=["'][^"']*popular-list__cafe-name[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || ""
+      );
+      const fallbackCafeName = rowText.match(/카페명\s*(.+)$/)?.[1] || "";
       const cafeName = cleanCafeName(
-        row.match(/<span\b[^>]*class=["'][^"']*popular-list__cafe-name[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] ||
+        (classCafeName && classCafeName !== "카페명" ? classCafeName : "") ||
+          fallbackCafeName ||
           "다음 카페"
       );
       const sourceRank =
@@ -1393,6 +1439,18 @@ function buildCafeArticleUrl(item) {
   return url.toString();
 }
 
+function getCafeSourceLimit(range) {
+  return toPositiveInt(range?.sourceLimit, SOURCE_ITEM_LIMIT);
+}
+
+function getCafeThumbnailImageIndex(item) {
+  const text = normalizeCompactText(
+    [item.cafeName, item.source, item.siteName, item.boardName, item.link].filter(Boolean).join(" ")
+  );
+
+  return SECOND_THUMBNAIL_CAFE_KEYWORDS.some((keyword) => text.includes(normalizeCompactText(keyword))) ? 1 : 0;
+}
+
 function extractDaumCafeArticleIds(link) {
   try {
     const url = new URL(link);
@@ -1490,6 +1548,41 @@ function selectBalancedTopItems(items, maxItems) {
   return selected.sort(compareTrendItems).slice(0, maxItems);
 }
 
+function selectCafeItems(items, range, maxItems, minDaumItems = 0) {
+  const selected = [];
+  const selectedKeys = new Set();
+
+  const addItem = (item) => {
+    const key = normalizeDedupeKey(item);
+    if (!key || selectedKeys.has(key)) return false;
+    selectedKeys.add(key);
+    selected.push(item);
+    return true;
+  };
+
+  if (range?.includeDaum && minDaumItems > 0) {
+    for (const item of items.filter(isDaumCafeItem)) {
+      if (selected.filter(isDaumCafeItem).length >= minDaumItems) break;
+      addItem(item);
+    }
+  }
+
+  for (const item of items) {
+    if (selected.length >= maxItems) break;
+    addItem(item);
+  }
+
+  return selected.sort(compareCafeArticles).slice(0, maxItems);
+}
+
+function isDaumCafeItem(item) {
+  return [item.sourceKey, item.source, item.siteName, item.link]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .includes("daum");
+}
+
 function calculateTrendScore(item, type) {
   const sourceRank = normalizeRank(item.sourceRank);
   const rankScore = Math.max(0, SOURCE_ITEM_LIMIT + 1 - sourceRank) * 10000;
@@ -1518,16 +1611,35 @@ function calculateLiveTrendScore(item) {
   return viewerCount * 1000 + rankScore + liveFreshnessScore;
 }
 
-function calculateCafeTrendScore(item) {
+function calculateCafeTrendScore(item, range = {}) {
   const sourceRank = normalizeRank(item.sourceRank || item.naverRank);
-  const rankLimit = Math.max(SOURCE_ITEM_LIMIT, MAX_ITEMS, 20);
-  const rankScore = Math.max(0, rankLimit + 1 - sourceRank) * 10000;
+  const rankLimit = Math.max(getCafeSourceLimit(range), SOURCE_ITEM_LIMIT, MAX_ITEMS, 20);
   const readCount = toNumber(item.readCount || item.viewCount);
   const likeCount = toNumber(item.likeCount || item.recommendCount);
   const commentCount = toNumber(item.commentCount);
   const ageHours = ageInHours(item.publishedAt);
-  const recencyScore = Math.max(0, 24 - ageHours) * 650;
+  const mode = range.scoreMode || range.key || "daily";
 
+  if (mode === "yearly") {
+    const rankScore = Math.max(0, rankLimit + 1 - sourceRank) * 1800;
+    const recencyScore = Math.max(0, 365 * 24 - ageHours) * 1.2;
+    return rankScore + readCount * 1.9 + likeCount * 320 + commentCount * 190 + recencyScore;
+  }
+
+  if (mode === "monthly") {
+    const rankScore = Math.max(0, rankLimit + 1 - sourceRank) * 3500;
+    const recencyScore = Math.max(0, 30 * 24 - ageHours) * 18;
+    return rankScore + readCount * 1.45 + likeCount * 280 + commentCount * 165 + recencyScore;
+  }
+
+  if (mode === "weekly") {
+    const rankScore = Math.max(0, rankLimit + 1 - sourceRank) * 6500;
+    const recencyScore = Math.max(0, 7 * 24 - ageHours) * 85;
+    return rankScore + readCount * 1.05 + likeCount * 245 + commentCount * 135 + recencyScore;
+  }
+
+  const rankScore = Math.max(0, rankLimit + 1 - sourceRank) * 10000;
+  const recencyScore = Math.max(0, 24 - ageHours) * 650;
   return rankScore + readCount * 0.85 + likeCount * 230 + commentCount * 120 + recencyScore;
 }
 
@@ -1609,6 +1721,7 @@ async function fetchText(url, options = {}) {
 
 function extractFirstImageFromHtml(html, options = {}) {
   const imageMatches = String(html || "").matchAll(/<img\b[^>]*>/gi);
+  const usableImages = [];
 
   for (const match of imageMatches) {
     const tag = match[0];
@@ -1621,8 +1734,13 @@ function extractFirstImageFromHtml(html, options = {}) {
     const imageUrl = normalizeImageUrl(decodeEntities(rawUrl), options.baseUrl);
 
     if (isUsableArticleImage(imageUrl, options)) {
-      return imageUrl;
+      usableImages.push(imageUrl);
     }
+  }
+
+  if (usableImages.length > 0) {
+    const imageIndex = Math.max(0, toNumber(options.imageIndex));
+    return usableImages[imageIndex] || usableImages[0];
   }
 
   const ogImage = String(html || "").match(/<meta\b[^>]*(?:property|name)=["']og:image["'][^>]*content=["']([^"']+)["'][^>]*>/i)?.[1];
@@ -2076,6 +2194,12 @@ function cleanCafeName(value) {
   return stripHtml(value)
     .replace(/^카페명\s*/i, "")
     .replace(/^[`'"\u2018\u2019\u201c\u201d]+|[`'"\u2018\u2019\u201c\u201d]+$/g, "");
+}
+
+function normalizeCompactText(value) {
+  return stripHtml(value)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 function decodeEntities(value) {
