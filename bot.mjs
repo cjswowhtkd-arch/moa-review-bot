@@ -19,6 +19,7 @@ const TWITCH_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.TWITCH_SOURCE_ITEM_LI
 const TWITCH_MIN_ITEMS_PER_MEDIA_FEED = toPositiveInt(process.env.TWITCH_MIN_ITEMS_PER_MEDIA_FEED, 3);
 const YOUTUBE_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.YOUTUBE_SOURCE_ITEM_LIMIT, 50);
 const YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED = toPositiveInt(process.env.YOUTUBE_MIN_ITEMS_PER_MEDIA_FEED, 2);
+const REQUIRE_MEDIA_API_SOURCES = process.env.REQUIRE_MEDIA_API_SOURCES !== "0";
 const HTTP_TIMEOUT_MS = toPositiveInt(process.env.HTTP_TIMEOUT_MS, 12000);
 const ARTICLE_TIMEOUT_MS = toPositiveInt(process.env.ARTICLE_TIMEOUT_MS, 9000);
 const ARTICLE_CONCURRENCY = toPositiveInt(process.env.ARTICLE_CONCURRENCY, 5);
@@ -330,7 +331,7 @@ async function fetchAggregateTrend({ key, label, type, sources, fallbackImage })
 }
 
 async function fetchMediaTrendBuckets() {
-  console.log("\n[미디어 트렌드] 치지직, SOOP, 트위치 실시간 시청자수 랭킹 수집");
+  console.log("\n[미디어 트렌드] 치지직, SOOP, 트위치, 유튜브 실시간 시청자수 랭킹 수집");
 
   const sourceFetchers = [
     { label: "치지직 LIVE", fetcher: fetchChzzkLiveRankings },
@@ -350,7 +351,10 @@ async function fetchMediaTrendBuckets() {
     }
   });
 
-  const rankedItems = dedupeItems(sourceResults.flat())
+  const rawMediaItems = sourceResults.flat();
+  enforceRequiredMediaSources(rawMediaItems);
+
+  const rankedItems = dedupeItems(rawMediaItems)
     .map((item) => ({
       ...item,
       type: "media",
@@ -375,6 +379,22 @@ async function fetchMediaTrendBuckets() {
   }
 
   return buckets;
+}
+
+function enforceRequiredMediaSources(items) {
+  if (!REQUIRE_MEDIA_API_SOURCES) return;
+
+  const missing = [];
+  if (!items.some(isTwitchItem)) missing.push("트위치");
+  if (!items.some(isYoutubeItem)) missing.push("유튜브");
+
+  if (!missing.length) return;
+
+  throw new Error(
+    `${missing.join(", ")} 수집 결과가 0개입니다. API 키 또는 할당량을 확인하세요. ` +
+      "기존 Firebase 데이터를 지우지 않기 위해 저장을 중단합니다. " +
+      "임시로 부분 저장을 허용하려면 REQUIRE_MEDIA_API_SOURCES=0으로 설정하세요."
+  );
 }
 
 async function fetchMediaTrends() {
