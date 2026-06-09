@@ -347,14 +347,13 @@ async function fetchMediaTrendBuckets() {
 
   const buckets = {};
   for (const feed of MEDIA_FEEDS) {
-    const topItems = rankedItems
-      .filter((item) => item.mediaCategory === feed.category)
-      .slice(0, MAX_ITEMS)
+    const categoryItems = rankedItems.filter((item) => item.mediaCategory === feed.category);
+    const topItems = selectMediaTopItems(categoryItems)
       .map((item, index) => toPublicTrendItem(item, index, "media", FALLBACK_IMAGES.mediaTrend));
 
     buckets[feed.key] = topItems;
     console.log(
-      `  - ${feed.label}: 후보 ${rankedItems.filter((item) => item.mediaCategory === feed.category).length}개, 이미지 ${
+      `  - ${feed.label}: 후보 ${categoryItems.length}개, 이미지 ${
         topItems.filter((item) => isDisplayableImage(item.img)).length
       }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
     );
@@ -1379,6 +1378,21 @@ function classifyMediaCategory(item) {
   }
 
   return "chat";
+}
+
+function selectMediaTopItems(items) {
+  const selected = items.slice(0, MAX_ITEMS);
+  const twitch = items.find((item) => item.source === "트위치" || item.platformName === "트위치");
+
+  if (twitch && !selected.some((item) => item.source === "트위치" || item.platformName === "트위치")) {
+    if (selected.length >= MAX_ITEMS) {
+      selected[selected.length - 1] = twitch;
+    } else {
+      selected.push(twitch);
+    }
+  }
+
+  return dedupeItems(selected).sort(compareLiveTrendItems).slice(0, MAX_ITEMS);
 }
 
 function absolutizeUrl(value, baseUrl) {
