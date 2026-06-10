@@ -13,7 +13,7 @@ loadEnvFile(resolve(SCRIPT_DIR, ".env"));
 const DEFAULT_FIREBASE_DB_URL =
   "https://chosanghee00001-default-rtdb.firebaseio.com/categories.json";
 
-const MAX_ITEMS = toPositiveInt(process.env.MAX_ITEMS_PER_CATEGORY, 10);
+const MAX_ITEMS = toPositiveInt(process.env.MAX_ITEMS_PER_CATEGORY, 15);
 const SOURCE_ITEM_LIMIT = toPositiveInt(process.env.SOURCE_ITEM_LIMIT, 20);
 const COMMUNITY_SOURCE_ITEM_LIMIT = toPositiveInt(process.env.COMMUNITY_SOURCE_ITEM_LIMIT, 100);
 const COMMUNITY_PAGE_LIMIT = toPositiveInt(process.env.COMMUNITY_PAGE_LIMIT, 5);
