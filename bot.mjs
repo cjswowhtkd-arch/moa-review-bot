@@ -1,4 +1,3 @@
-```javascript
 // [bot.mjs] MoaReview trend collector.
 // Cafe, community, and media feeds use each site's own official hot list order,
 // then rank candidates by engagement.
@@ -704,9 +703,7 @@ async function startRobot() {
       body: JSON.stringify(categoriesData),
     });
 
-    if (!response.ok) {
-      throw new Error("Firebase PUT failed with status: " + response.status);
-    }
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
     console.log("\n[성공] 모아리뷰 실시간 트렌드 데이터가 Firebase에 저장되었습니다.");
   } catch (error) {
     console.error("\n[실패] Firebase 전송 오류:", error.message);
@@ -716,7 +713,7 @@ async function startRobot() {
 
 async function fetchCafeTrend(range) {
   const sourceLabel = range.includeDaum ? "네이버 카페 + 다음 카페" : "네이버 카페";
-  console.log("\n[" + range.label + "] " + sourceLabel + " 공식 인기글 수집");
+  console.log(`\n[${range.label}] ${sourceLabel} 공식 인기글 수집`);
 
   const sourceFetchers = [
     { label: "네이버 카페", fetcher: () => fetchNaverCafeSource(range) },
@@ -728,10 +725,10 @@ async function fetchCafeTrend(range) {
   const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
     try {
       const items = await source.fetcher();
-      console.log("  - " + source.label + ": " + items.length + "개");
+      console.log(`  - ${source.label}: ${items.length}개`);
       return items;
     } catch (error) {
-      console.warn("  - " + source.label + " 수집 실패: " + error.message);
+      console.warn(`  - ${source.label} 수집 실패: ${error.message}`);
       return [];
     }
   });
@@ -769,9 +766,9 @@ async function fetchCafeTrend(range) {
     .map((item, index) => toPublicCafeTrendItem(item, index, range));
 
   console.log(
-    "  - 통합 후보 " + articles.length + "개" + (range.filterCategory ? " (" + range.label + " 필터 적용)" : "") + ", 본문첫이미지 " +
-      enrichedItems.filter((item) => item.firstImage).length +
-      "개, 최종 " + topItems.length + "/" + MAX_ITEMS + "개"
+    `  - 통합 후보 ${articles.length}개${range.filterCategory ? ` (${range.label} 필터 적용)` : ""}, 본문첫이미지 ${
+      enrichedItems.filter((item) => item.firstImage).length
+    }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
   );
   return topItems;
 }
@@ -801,19 +798,14 @@ function buildRunMetadata(categoriesData, updatedAt) {
     updatedAt: updatedAt.toISOString(),
     updatedAtKst: formatKstDateTime(updatedAt),
     updateIntervalMinutes: UPDATE_INTERVAL_MINUTES,
-    schedule: "every " + UPDATE_INTERVAL_MINUTES + " minutes",
+    schedule: `every ${UPDATE_INTERVAL_MINUTES} minutes`,
     maxItemsPerCategory: MAX_ITEMS,
-    counts: counts,
+    counts,
   };
 }
 
-async function fetchAggregateTrend(config) {
-  const label = config.label;
-  const type = config.type;
-  const sources = config.sources;
-  const fallbackImage = config.fallbackImage;
-
-  console.log("\n[" + label + "] " + sources.map((source) => source.label).join(", ") + " 수집");
+async function fetchAggregateTrend({ key, label, type, sources, fallbackImage }) {
+  console.log(`\n[${label}] ${sources.map((source) => source.label).join(", ")} 수집`);
 
   const sourceResults = await mapLimit(sources, SOURCE_CONCURRENCY, async (source) => {
     try {
@@ -827,7 +819,7 @@ async function fetchAggregateTrend(config) {
         .slice(0, SOURCE_ITEM_LIMIT)
         .map((item, index) => ({
           ...item,
-          type: type,
+          type,
           sourceKey: source.key,
           source: source.siteName,
           siteName: source.siteName,
@@ -836,10 +828,10 @@ async function fetchAggregateTrend(config) {
           sourceRank: item.sourceRank || index + 1,
         }));
 
-      console.log("  - " + source.label + ": " + parsed.length + "개");
+      console.log(`  - ${source.label}: ${parsed.length}개`);
       return parsed;
     } catch (error) {
-      console.warn("  - " + source.label + " 수집 실패: " + error.message);
+      console.warn(`  - ${source.label} 수집 실패: ${error.message}`);
       return [];
     }
   });
@@ -868,9 +860,9 @@ async function fetchAggregateTrend(config) {
     .map((item, index) => toPublicTrendItem(item, index, type, fallbackImage));
 
   console.log(
-    "  - 통합 후보 " + candidates.length + "개, 이미지 " +
-      topItems.filter((item) => isDisplayableImage(item.img)).length +
-      "개, 최종 " + topItems.length + "/" + MAX_ITEMS + "개"
+    `  - 통합 후보 ${candidates.length}개, 이미지 ${
+      topItems.filter((item) => isDisplayableImage(item.img)).length
+    }개, 최종 ${topItems.length}/${MAX_ITEMS}개`
   );
 
   return topItems;
@@ -918,16 +910,16 @@ async function fetchCommunityTrendBuckets() {
     buckets[feed.key] = topItems;
     const shortageLabel = topItems.length < MAX_ITEMS ? " (후보 부족)" : "";
     console.log(
-      "  - " + feed.label + ": 후보 " + categoryItems.length + "개, 이미지 " +
-        topItems.filter((item) => isDisplayableImage(item.img)).length +
-        "개, 최종 " + topItems.length + "/" + MAX_ITEMS + "개" + shortageLabel
+      `  - ${feed.label}: 후보 ${categoryItems.length}개, 이미지 ${
+        topItems.filter((item) => isDisplayableImage(item.img)).length
+      }개, 최종 ${topItems.length}/${MAX_ITEMS}개${shortageLabel}`
     );
   }
 
   console.log(
-    "  - 전체HOT: 후보 " + rankedItems.length + "개, 이미지 " +
-      buckets.communityPopular.filter((item) => isDisplayableImage(item.img)).length +
-      "개, 최종 " + buckets.communityPopular.length + "/" + MAX_ITEMS + "개"
+    `  - 전체HOT: 후보 ${rankedItems.length}개, 이미지 ${
+      buckets.communityPopular.filter((item) => isDisplayableImage(item.img)).length
+    }개, 최종 ${buckets.communityPopular.length}/${MAX_ITEMS}개`
   );
 
   return buckets;
@@ -947,17 +939,14 @@ async function fetchCommunitySourceItems() {
   for (const source of COMMUNITY_SOURCES) {
     for (let page = 1; page <= COMMUNITY_PAGE_LIMIT; page += 1) {
       pageRequests.push({
-        source: source,
-        page: page,
+        source,
+        page,
         url: withPageParam(source.url, page),
       });
     }
   }
 
-  const pageResults = await mapLimit(pageRequests, SOURCE_CONCURRENCY, async (req) => {
-    const source = req.source;
-    const page = req.page;
-    const url = req.url;
+  const pageResults = await mapLimit(pageRequests, SOURCE_CONCURRENCY, async ({ source, page, url }) => {
     try {
       const html = await fetchText(url, {
         encoding: source.encoding,
@@ -965,7 +954,7 @@ async function fetchCommunitySourceItems() {
         userAgent: source.userAgent,
       });
       const parsed = source
-        .parser(html, { ...source, url: url })
+        .parser(html, { ...source, url })
         .filter((item) => item.title && item.link);
       const offset = (page - 1) * Math.max(parsed.length, SOURCE_ITEM_LIMIT);
 
@@ -980,7 +969,7 @@ async function fetchCommunitySourceItems() {
         sourceRank: offset + (item.sourceRank || index + 1),
       }));
     } catch (error) {
-      console.warn("  - " + source.label + " " + page + "페이지 수집 실패: " + error.message);
+      console.warn(`  - ${source.label} ${page}페이지 수집 실패: ${error.message}`);
       return [];
     }
   });
@@ -990,9 +979,9 @@ async function fetchCommunitySourceItems() {
     COMMUNITY_SOURCE_ITEM_LIMIT
   );
   const sourceCounts = COMMUNITY_SOURCES
-    .map((source) => source.label + " " + items.filter((item) => item.sourceKey === source.key).length + "개")
+    .map((source) => `${source.label} ${items.filter((item) => item.sourceKey === source.key).length}개`)
     .join(", ");
-  console.log("  - 통합 커뮤니티 후보: " + items.length + "개 (" + sourceCounts + ")");
+  console.log(`  - 통합 커뮤니티 후보: ${items.length}개 (${sourceCounts})`);
   return items;
 }
 
@@ -1009,21 +998,21 @@ async function fetchMediaTrendBuckets() {
   const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
     try {
       const items = await source.fetcher();
-      console.log("  - " + source.label + ": " + items.length + "개");
+      console.log(`  - ${source.label}: ${items.length}개`);
       return items.slice(0, source.limit || SOURCE_ITEM_LIMIT);
     } catch (error) {
       if (isOptionalMediaQuotaError(source.label, error)) {
-        console.log("  - " + source.label + ": YouTube 할당량 제한으로 이번 회차 건너뜜");
+        console.log(`  - ${source.label}: YouTube 할당량 제한으로 이번 회차 건너뜀`);
         return [];
       }
-      console.warn("  - " + source.label + " 수집 실패: " + error.message);
+      console.warn(`  - ${source.label} 수집 실패: ${error.message}`);
       return [];
     }
   });
 
   const rawMediaItems = sourceResults.flat();
   enforceRequiredMediaSources(rawMediaItems);
-  const replayItems = await fetchMediaReplayRankings(rawMediaItems);
+  const replayItems = await fetchMediaReplayRankings();
 
   const rankedItems = dedupeItems(rawMediaItems)
     .map((item) => ({
@@ -1045,51 +1034,47 @@ async function fetchMediaTrendBuckets() {
         : feed.category === "all"
           ? rankedItems
           : rankedItems.filter((item) => item.mediaCategory === feed.category);
-
     const topItems = (feed.category === "replay" ? selectBalancedTopItems(categoryItems, MAX_ITEMS) : selectMediaTopItems(categoryItems))
       .map((item, index) => toPublicTrendItem(item, index, "media", FALLBACK_IMAGES.mediaTrend));
 
     buckets[feed.key] = topItems;
     const shortageLabel = topItems.length < MAX_ITEMS ? " (후보 부족)" : "";
     console.log(
-      "  - " + feed.label + ": 후보 " + categoryItems.length + "개, 이미지 " +
-        topItems.filter((item) => isDisplayableImage(item.img)).length +
-        "개, 최종 " + topItems.length + "/" + MAX_ITEMS + "개" + shortageLabel
+      `  - ${feed.label}: 후보 ${categoryItems.length}개, 이미지 ${
+        topItems.filter((item) => isDisplayableImage(item.img)).length
+      }개, 최종 ${topItems.length}/${MAX_ITEMS}개${shortageLabel}`
     );
   }
 
   return buckets;
 }
 
-async function fetchMediaReplayRankings(liveItems) {
+async function fetchMediaReplayRankings() {
   console.log("  - 다시보기 후보 수집");
 
-  // 다시보기 카테고리에서 트위치(Twitch VOD) 수집 제외
   const sourceFetchers = [
-    { label: "치지직 VOD", fetcher: fetchChzzkReplayRankings }
+    { label: "치지직 VOD", fetcher: fetchChzzkReplayRankings },
   ];
   if (ENABLE_YOUTUBE_REPLAY) {
-    sourceFetchers.push({ label: "YouTube 완료 라이브", fetcher: fetchYoutubeReplayRankings });
+    sourceFetchers.splice(1, 0, { label: "YouTube 완료 라이브", fetcher: fetchYoutubeReplayRankings });
   }
 
   const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
     try {
       const items = await source.fetcher();
-      console.log("    · " + source.label + ": " + items.length + "개");
+      console.log(`    · ${source.label}: ${items.length}개`);
       return items;
     } catch (error) {
       if (isOptionalMediaQuotaError(source.label, error)) {
-        console.log("    · " + source.label + ": YouTube 할당량 제한으로 이번 회차 건너뜜");
+        console.log(`    · ${source.label}: YouTube 할당량 제한으로 이번 회차 건너뜀`);
         return [];
       }
-      console.warn("    · " + source.label + " 수집 실패: " + error.message);
+      console.warn(`    · ${source.label} 수집 실패: ${error.message}`);
       return [];
     }
   });
 
-  // 다시보기 카테고리에 트위치 아이템이 섞이지 않도록 재검증 필터링 추가
   return dedupeItems(sourceResults.flat())
-    .filter((item) => !isTwitchItem(item))
     .map((item) => ({
       ...item,
       type: "media",
@@ -1103,7 +1088,7 @@ async function fetchMediaReplayRankings(liveItems) {
 function buildMusicMediaItems(liveItems, replayItems) {
   const liveMusicItems = liveItems.filter((item) => item.mediaCategory === "music" || classifyMediaCategory(item) === "music");
   const replayMusicItems = replayItems
-    .filter((item) => classifyMediaCategory(item) === "music" && !isTwitchItem(item)) // 트위치 아이템 제거 추가
+    .filter((item) => classifyMediaCategory(item) === "music")
     .map((item) => ({
       ...item,
       mediaCategory: "music",
@@ -1127,7 +1112,7 @@ function enforceRequiredMediaSources(items) {
   if (!missing.length) return;
 
   throw new Error(
-    missing.join(", ") + " 수집 결과가 0개입니다. API 키 또는 할당량을 확인하세요. " +
+    `${missing.join(", ")} 수집 결과가 0개입니다. API 키 또는 할당량을 확인하세요. ` +
       "기존 Firebase 데이터를 지우지 않기 위해 저장을 중단합니다. " +
       "해당 소스를 반드시 포함해야 할 때만 REQUIRE_MEDIA_API_SOURCES=1, REQUIRE_TWITCH_SOURCE=1, REQUIRE_YOUTUBE_SOURCE=1을 설정하세요."
   );
@@ -1160,11 +1145,11 @@ async function fetchChzzkLiveRankings() {
       return {
         sourceRank: index + 1,
         title: stripHtml(item.liveTitle),
-        link: channelId ? CHZZK_LIVE_PAGE_BASE + "/" + encodeURIComponent(channelId) : "https://chzzk.naver.com/",
+        link: channelId ? `${CHZZK_LIVE_PAGE_BASE}/${encodeURIComponent(channelId)}` : "https://chzzk.naver.com/",
         previewUrl: "",
         previewType: "image",
         img: thumbnail,
-        thumbnail: thumbnail,
+        thumbnail,
         platformName: "치지직",
         source: "치지직",
         siteName: "치지직",
@@ -1183,7 +1168,7 @@ async function fetchChzzkLiveRankings() {
         openDate: item.openDate,
         rankingBasis: "치지직 실시간 라이브 시청자수 랭킹",
         liveId: item.liveId,
-        channelId: channelId,
+        channelId,
         tags: item.tags || [],
       };
     });
@@ -1208,7 +1193,7 @@ async function fetchSoopLiveRankings() {
       const broadNo = item.broad_no || "";
       const playUrl =
         userId && broadNo
-          ? SOOP_PLAY_PAGE_BASE + "/" + encodeURIComponent(userId) + "/" + encodeURIComponent(broadNo)
+          ? `${SOOP_PLAY_PAGE_BASE}/${encodeURIComponent(userId)}/${encodeURIComponent(broadNo)}`
           : "https://www.sooplive.co.kr/";
 
       return {
@@ -1218,7 +1203,7 @@ async function fetchSoopLiveRankings() {
         previewUrl: "",
         previewType: "image",
         img: thumbnail,
-        thumbnail: thumbnail,
+        thumbnail,
         platformName: "SOOP",
         source: "SOOP",
         siteName: "SOOP",
@@ -1226,7 +1211,7 @@ async function fetchSoopLiveRankings() {
         sourceKey: "soopLive",
         sourceUrl: "https://www.sooplive.co.kr/",
         channelName: stripHtml(item.user_nick || item.station_name || userId || "SOOP"),
-        viewerCount: viewerCount,
+        viewerCount,
         viewCount: viewerCount,
         concurrentUserCount: viewerCount,
         recommendCount: 0,
@@ -1260,7 +1245,7 @@ async function fetchTwitchLiveRankings() {
     headers: {
       ...basicBrowserHeaders(),
       "Client-Id": clientId,
-      Authorization: "Bearer " + token,
+      Authorization: `Bearer ${token}`,
     },
   });
 
@@ -1273,11 +1258,11 @@ async function fetchTwitchLiveRankings() {
       return {
         sourceRank: index + 1,
         title: stripHtml(item.title),
-        link: TWITCH_PAGE_BASE + "/" + encodeURIComponent(item.user_login),
+        link: `${TWITCH_PAGE_BASE}/${encodeURIComponent(item.user_login)}`,
         previewUrl: "",
         previewType: "image",
         img: thumbnail,
-        thumbnail: thumbnail,
+        thumbnail,
         platformName: "트위치",
         source: "트위치",
         siteName: "트위치",
@@ -1285,7 +1270,7 @@ async function fetchTwitchLiveRankings() {
         sourceKey: "twitchLive",
         sourceUrl: "https://www.twitch.tv/directory",
         channelName: stripHtml(item.user_name || item.user_login || "Twitch"),
-        viewerCount: viewerCount,
+        viewerCount,
         viewCount: viewerCount,
         concurrentUserCount: viewerCount,
         recommendCount: 0,
@@ -1316,7 +1301,7 @@ async function fetchTwitchAppAccessToken(clientId, clientSecret) {
       "Accept": "application/json",
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: body,
+    body,
   });
 
   if (!response?.access_token) throw new Error("Twitch app access token 발급 실패");
@@ -1395,7 +1380,7 @@ async function fetchYoutubeLiveRankings() {
         sourceKey: "youtubeLive",
         sourceUrl: "https://www.youtube.com/live",
         channelName: stripHtml(snippet.channelTitle || "YouTube"),
-        viewerCount: viewerCount,
+        viewerCount,
         viewCount: viewerCount,
         concurrentUserCount: viewerCount,
         recommendCount: 0,
@@ -1491,7 +1476,7 @@ async function fetchYoutubeReplayRankings() {
         commentCount: toNumber(item.statistics?.commentCount),
         viewTime: "다시보기",
         publishedLabel: "다시보기",
-        publishedAt: snippet.publishedAt || item.liveStreamingDetails?.actualStartTime || new Date().toISOString(),
+        publishedAt: snippet.publishedAt || item.liveStreamingDetails?.actualEndTime || new Date().toISOString(),
         rankingBasis: "YouTube Data API 완료 라이브 조회수 랭킹",
         liveId: item.id,
         channelId: snippet.channelId || "",
@@ -1521,11 +1506,11 @@ async function fetchChzzkReplayRankings() {
       return {
         sourceRank: index + 1,
         title: stripHtml(item.videoTitle),
-        link: videoNo ? CHZZK_VIDEO_PAGE_BASE + "/" + encodeURIComponent(videoNo) : "https://chzzk.naver.com/videos",
+        link: videoNo ? `${CHZZK_VIDEO_PAGE_BASE}/${encodeURIComponent(videoNo)}` : "https://chzzk.naver.com/videos",
         previewUrl: "",
         previewType: "image",
         img: thumbnail,
-        thumbnail: thumbnail,
+        thumbnail,
         platformName: "치지직",
         source: "치지직",
         siteName: "치지직",
@@ -1551,8 +1536,7 @@ async function fetchChzzkReplayRankings() {
     .slice(0, Math.max(MAX_ITEMS * 2, 20));
 }
 
-async function fetchTwitchReplayRankings(liveItems) {
-  const list = liveItems || [];
+async function fetchTwitchReplayRankings(liveItems = []) {
   const clientId = process.env.TWITCH_CLIENT_ID || "";
   const clientSecret = process.env.TWITCH_CLIENT_SECRET || "";
   if (!clientId || !clientSecret) {
@@ -1561,7 +1545,7 @@ async function fetchTwitchReplayRankings(liveItems) {
   }
 
   const channelIds = uniqueCompact(
-    list
+    liveItems
       .filter(isTwitchItem)
       .map((item) => item.channelId || item.userId)
   ).slice(0, 8);
@@ -1580,14 +1564,14 @@ async function fetchTwitchReplayRankings(liveItems) {
       headers: {
         ...basicBrowserHeaders(),
         "Client-Id": clientId,
-        Authorization: "Bearer " + token,
+        Authorization: `Bearer ${token}`,
       },
     });
 
     return (response?.data || []).map((item) => ({
       sourceRank: 999,
       title: stripHtml(item.title),
-      link: item.url || TWITCH_PAGE_BASE + "/" + encodeURIComponent(item.user_name || ""),
+      link: item.url || `${TWITCH_PAGE_BASE}/${encodeURIComponent(item.user_name || "")}`,
       previewUrl: "",
       previewType: "image",
       img: normalizeTwitchThumbnail(item.thumbnail_url),
@@ -1629,28 +1613,27 @@ async function enrichCafeArticle(item) {
 
 async function enrichNaverCafeArticle(item) {
   const firstImage = await fetchNaverCafeFirstImage(item).catch((error) => {
-    console.warn("  - 네이버 카페 첫 이미지 추출 실패: " + item.title + " (" + error.message + ")");
+    console.warn(`  - 네이버 카페 첫 이미지 추출 실패: ${item.title} (${error.message})`);
     return "";
   });
 
   return {
     ...item,
-    firstImage: firstImage,
+    firstImage,
   };
 }
 
 async function enrichDaumCafeArticle(item) {
   const detail = await fetchDaumCafeArticleDetail(item).catch((error) => {
-    console.warn("  - 다음 카페 상세 정보 추출 실패: " + item.title + " (" + error.message + ")");
+    console.warn(`  - 다음 카페 상세 정보 추출 실패: ${item.title} (${error.message})`);
     return {};
   });
 
-  const rdCount = detail.viewCount || item.readCount || item.viewCount || 0;
   return {
     ...item,
     ...detail,
-    readCount: rdCount,
-    viewCount: rdCount,
+    readCount: detail.viewCount || item.readCount || item.viewCount || 0,
+    viewCount: detail.viewCount || item.viewCount || item.readCount || 0,
     commentCount: detail.commentCount ?? item.commentCount ?? 0,
     firstImage: detail.firstImage || "",
     img: detail.firstImage || item.img || FALLBACK_IMAGES.naverCafe,
@@ -1661,7 +1644,7 @@ async function enrichDaumCafeArticle(item) {
 async function fetchDaumCafeArticleDetail(item) {
   if (!isHttpUrl(item.link)) return {};
 
-  const cacheKey = "daum:" + item.link;
+  const cacheKey = `daum:${item.link}`;
   if (articleImageCache.has(cacheKey)) return articleImageCache.get(cacheKey);
 
   const html = await fetchText(item.link, {
@@ -1675,7 +1658,7 @@ async function fetchDaumCafeArticleDetail(item) {
   });
   const meta = extractDaumCafeArticleMeta(html);
   const detail = {
-    firstImage: firstImage,
+    firstImage,
     ...meta,
   };
 
@@ -1686,11 +1669,13 @@ async function fetchDaumCafeArticleDetail(item) {
 async function fetchNaverCafeFirstImage(item) {
   if (!item.cafeId || !item.articleId) return "";
 
-  const cacheKey = "naver:" + item.cafeId + ":" + item.articleId;
+  const cacheKey = `naver:${item.cafeId}:${item.articleId}`;
   if (articleImageCache.has(cacheKey)) return articleImageCache.get(cacheKey);
 
   const url = new URL(
-    NAVER_CAFE_ARTICLE_API_BASE + "/" + encodeURIComponent(item.cafeId) + "/articles/" + encodeURIComponent(item.articleId)
+    `${NAVER_CAFE_ARTICLE_API_BASE}/${encodeURIComponent(item.cafeId)}/articles/${encodeURIComponent(
+      item.articleId
+    )}`
   );
   url.searchParams.set("useCafeId", "true");
   url.searchParams.set("fromPopular", "true");
@@ -1720,20 +1705,20 @@ async function enrichExternalArticleImage(item, fallbackImage) {
   }
 
   const firstImage = await fetchExternalFirstImage(item).catch((error) => {
-    console.warn("  - 외부 글 첫 이미지 추출 실패: " + item.title + " (" + error.message + ")");
+    console.warn(`  - 외부 글 첫 이미지 추출 실패: ${item.title} (${error.message})`);
     return "";
   });
 
   const image = firstImage || item.img || fallbackImage;
   const displayImage = await embedImageIfNeeded(image, item).catch((error) => {
     if (error?.code === "BROKEN_IMAGE") {
-      console.warn("  - 깨진 보호 이미지 대체: " + item.title + " (" + error.message + ")");
+      console.warn(`  - 깨진 보호 이미지 대체: ${item.title} (${error.message})`);
       return fallbackImage;
     }
     if (error?.code === "IMAGE_TOO_LARGE") {
       return image;
     }
-    console.warn("  - 보호 이미지는 원본 주소 사용: " + item.title + " (" + error.message + ")");
+    console.warn(`  - 보호 이미지는 원본 주소 사용: ${item.title} (${error.message})`);
     return image;
   });
 
@@ -1748,7 +1733,7 @@ async function enrichExternalArticleImage(item, fallbackImage) {
 async function fetchExternalFirstImage(item) {
   if (!isHttpUrl(item.link)) return "";
 
-  const cacheKey = "external:first:" + item.link;
+  const cacheKey = `external:first:${item.link}`;
   if (articleImageCache.has(cacheKey)) return articleImageCache.get(cacheKey);
 
   const html = await fetchText(item.link, {
@@ -1765,14 +1750,14 @@ async function fetchExternalFirstImage(item) {
 }
 
 async function fetchNaverCafePopular(endpoint) {
-  const url = NAVER_CAFE_API_BASE + "/" + endpoint + "?ad=false&adUnit=&uuid=";
+  const url = `${NAVER_CAFE_API_BASE}/${endpoint}?ad=false&adUnit=&uuid=`;
   const response = await fetchJson(url);
   const message = response?.message;
 
   if (message?.status !== "200") {
     const code = message?.error?.code || "unknown";
     const msg = message?.error?.msg || "Naver Cafe API error";
-    throw new Error(endpoint + " " + code + ": " + msg);
+    throw new Error(`${endpoint} ${code}: ${msg}`);
   }
 
   return message?.result?.popularArticles || [];
@@ -1828,22 +1813,22 @@ function parseDaumCafePopular(html, range) {
 
       return {
         sourceKey: "daumCafeTop",
-        sourceRank: sourceRank,
-        title: title,
-        link: link,
+        sourceRank,
+        title,
+        link,
         img: extractImageFromTag(row, DAUM_CAFE_TOP_URL),
         thumbnail: extractImageFromTag(row, DAUM_CAFE_TOP_URL),
         source: "다음 카페",
         siteName: "다음 카페",
         boardName: range.label,
-        cafeName: cafeName,
+        cafeName,
         viewCount: 0,
         readCount: 0,
         recommendCount: 0,
         likeCount: 0,
         commentCount: 0,
         publishedAt: new Date().toISOString(),
-        rankingBasis: range.label + " 다음 카페 공식 인기글",
+        rankingBasis: `${range.label} 다음 카페 공식 인기글`,
         ...articleIds,
       };
     })
@@ -1868,15 +1853,15 @@ function parseDcinsideBest(html, source) {
 
     return {
       sourceRank: index + 1,
-      title: title,
-      link: link,
+      title,
+      link,
       img: thumb,
       viewCount: parseCount(extractCellText(row, "gall_count")),
       recommendCount: parseCount(extractCellText(row, "gall_recommend")),
-      commentCount: commentCount,
-      communityName: galleryName ? "디시 " + galleryName : source.siteName,
+      commentCount,
+      communityName: galleryName ? `디시 ${galleryName}` : source.siteName,
       publishedAt: parseKoreanDate(dateCell.match(/\btitle=["']([^"']+)["']/i)?.[1] || stripHtml(dateCell)),
-      rankingBasis: source.label + " 공식 목록",
+      rankingBasis: `${source.label} 공식 목록`,
     };
   });
 
@@ -1903,19 +1888,19 @@ function parseDcinsideBestMobile(html, source) {
     const recommendCount = parseCount(row.match(/추천\s*<span[^>]*>\s*([\d,.만천]+)/i)?.[1]);
     const commentCount = parseCount(row.match(/<span\b[^>]*class=["'][^"']*\bct\b[^"']*["'][^>]*>\s*([\d,.만천]+)/i)?.[1]);
     const timeLabel = row.match(/<li>\s*((?:\d{1,2}:\d{2})|(?:\d{2}\.\d{2}))\s*<\/li>/i)?.[1] || "";
-    const cleanGalleryName = galleryName && !/^\d+갤$/.test(galleryName) ? "디시 " + galleryName : source.siteName;
+    const cleanGalleryName = galleryName && !/^\d+갤$/.test(galleryName) ? `디시 ${galleryName}` : source.siteName;
 
     return {
       sourceRank: index + 1,
-      title: title,
-      link: link,
+      title,
+      link,
       img: thumb,
-      viewCount: viewCount,
-      recommendCount: recommendCount,
-      commentCount: commentCount,
+      viewCount,
+      recommendCount,
+      commentCount,
       communityName: cleanGalleryName,
       publishedAt: timeLabel ? parseKoreanDate(timeLabel) : new Date().toISOString(),
-      rankingBasis: source.label + " 모바일 공식 목록",
+      rankingBasis: `${source.label} 모바일 공식 목록`,
     };
   });
 }
@@ -1940,16 +1925,16 @@ function parseTheqooHot(html, source) {
 
     return {
       sourceRank: index + 1,
-      title: title,
-      link: link,
+      title,
+      link,
       img: "",
-      viewCount: viewCount,
+      viewCount,
       recommendCount: 0,
-      commentCount: commentCount,
-      communityName: category ? "더쿠 " + category : source.siteName,
+      commentCount,
+      communityName: category ? `더쿠 ${category}` : source.siteName,
       boardName: category || source.label,
       publishedAt: timeLabel ? parseKoreanDate(timeLabel) : new Date().toISOString(),
-      rankingBasis: source.label + " 공식 목록",
+      rankingBasis: `${source.label} 공식 목록`,
     };
   }).filter((item) => item.title && item.link);
 }
@@ -1979,16 +1964,16 @@ function parseRuliwebBest(html, source) {
 
     return {
       sourceRank: index + 1,
-      title: title,
-      link: link,
+      title,
+      link,
       img: "",
-      viewCount: viewCount,
-      recommendCount: recommendCount,
-      commentCount: commentCount,
-      communityName: boardName ? "루리웹 " + boardName : source.siteName,
+      viewCount,
+      recommendCount,
+      commentCount,
+      communityName: boardName ? `루리웹 ${boardName}` : source.siteName,
       boardName: boardName || source.label,
       publishedAt: timeLabel ? parseKoreanDate(timeLabel) : new Date().toISOString(),
-      rankingBasis: source.label + " 공식 목록",
+      rankingBasis: `${source.label} 공식 목록`,
     };
   }).filter((item) => item.title && item.link);
 }
@@ -1996,7 +1981,7 @@ function parseRuliwebBest(html, source) {
 function inferRuliwebBoardName(link) {
   try {
     const url = new URL(link);
-    const text = (url.pathname + " " + url.search).toLowerCase();
+    const text = `${url.pathname} ${url.search}`.toLowerCase();
     if (text.includes("humor")) return "유머";
     if (text.includes("game")) return "게임";
     if (text.includes("market")) return "핫딜";
@@ -2028,16 +2013,16 @@ function parsePpomppuHot(html, source) {
 
     return {
       sourceRank: index + 1,
-      title: title,
-      link: link,
+      title,
+      link,
       img: thumbnail,
-      viewCount: viewCount,
-      recommendCount: recommendCount,
-      commentCount: commentCount,
-      communityName: boardName ? "뽐뿌 " + boardName : source.siteName,
+      viewCount,
+      recommendCount,
+      commentCount,
+      communityName: boardName ? `뽐뿌 ${boardName}` : source.siteName,
       boardName: boardName || source.label,
       publishedAt: dateCells[0] ? parseKoreanDate(dateCells[0]) : new Date().toISOString(),
-      rankingBasis: source.label + " 공식 목록",
+      rankingBasis: `${source.label} 공식 목록`,
     };
   }).filter((item) => item.title && item.link);
 }
@@ -2063,16 +2048,16 @@ function parseInstizGreen(html, source) {
 
     return {
       sourceRank: index + 1,
-      title: title,
-      link: link,
+      title,
+      link,
       img: "",
       viewCount: parseCount(cells[1]),
       recommendCount: parseCount(cells[2]),
-      commentCount: commentCount,
-      communityName: category ? "인스티즈 " + category : source.siteName,
+      commentCount,
+      communityName: category ? `인스티즈 ${category}` : source.siteName,
       boardName: category || source.label,
       publishedAt: cells[0] ? parseKoreanDate(cells[0]) : new Date().toISOString(),
-      rankingBasis: source.label + " 공식 목록",
+      rankingBasis: `${source.label} 공식 목록`,
     };
   }).filter((item) => item.title && item.link);
 }
@@ -2101,7 +2086,7 @@ function normalizeCafeArticle(item, range) {
     publishedAt: item.writeDateTimestamp
       ? new Date(Number(item.writeDateTimestamp)).toISOString()
       : new Date().toISOString(),
-    rankingBasis: range.label + " 네이버 카페 공식 랭킹",
+    rankingBasis: `${range.label} 네이버 카페 공식 랭킹`,
   };
 }
 
@@ -2114,7 +2099,9 @@ function toPublicCafeTrendItem(item, index, range) {
   return {
     rank: index + 1,
     title: item.title,
-    content: range.label + " · " + cafeName + " · 조회 " + formatCountKo(readCount) + " · 댓글 " + formatCountKo(item.commentCount) + (likeCount ? " · 좋아요 " + formatCountKo(likeCount) : ""),
+    content: `${range.label} · ${cafeName} · 조회 ${formatCountKo(readCount)} · 댓글 ${formatCountKo(
+      item.commentCount
+    )}${likeCount ? ` · 좋아요 ${formatCountKo(likeCount)}` : ""}`,
     link: item.link,
     img: item.firstImage || item.img || FALLBACK_IMAGES.naverCafe,
     thumbnail: item.firstImage || item.thumbnail || item.img || FALLBACK_IMAGES.naverCafe,
@@ -2124,16 +2111,16 @@ function toPublicCafeTrendItem(item, index, range) {
     sources: uniqueCompact([sourceName, cafeName]),
     sourceCount: 1,
     publishedAt: item.publishedAt || new Date().toISOString(),
-    rankingBasis: item.rankingBasis || range.label + " 카페 공식 인기글",
+    rankingBasis: item.rankingBasis || `${range.label} 카페 공식 인기글`,
     sourceRank: item.sourceRank,
     naverRank: item.naverRank,
     daumRank: item.sourceKey === "daumCafeTop" ? item.sourceRank : undefined,
-    readCount: readCount,
+    readCount,
     viewCount: readCount,
     commentCount: toNumber(item.commentCount),
-    likeCount: likeCount,
+    likeCount,
     recommendCount: likeCount,
-    cafeName: cafeName,
+    cafeName,
     cafeId: item.cafeId,
     articleId: item.articleId,
     daumCafeCode: item.daumCafeCode,
@@ -2195,19 +2182,19 @@ function buildContentSummary(item, type) {
   if (item.siteName || item.source) parts.push(item.siteName || item.source);
   if (item.boardName) parts.push(item.boardName);
   if (type === "media" && item.mediaCategory !== "replay" && toNumber(item.viewerCount || item.viewCount) > 0) {
-    parts.push("시청자 " + formatCountKo(item.viewerCount || item.viewCount));
+    parts.push(`시청자 ${formatCountKo(item.viewerCount || item.viewCount)}`);
   } else if (item.viewCount > 0) {
-    parts.push("조회 " + formatCountKo(item.viewCount));
+    parts.push(`조회 ${formatCountKo(item.viewCount)}`);
   }
-  if (item.recommendCount > 0) parts.push("추천 " + formatCountKo(item.recommendCount));
-  if (item.commentCount > 0) parts.push("댓글 " + formatCountKo(item.commentCount));
+  if (item.recommendCount > 0) parts.push(`추천 ${formatCountKo(item.recommendCount)}`);
+  if (item.commentCount > 0) parts.push(`댓글 ${formatCountKo(item.commentCount)}`);
   return parts.join(" · ");
 }
 
 function buildCafeArticleUrl(item) {
   const cafeId = encodeURIComponent(item.cafeId || "");
   const articleId = encodeURIComponent(item.articleId || "");
-  const url = new URL("https://m.cafe.naver.com/ca-fe/web/cafes/" + cafeId + "/articles/" + articleId);
+  const url = new URL(`https://m.cafe.naver.com/ca-fe/web/cafes/${cafeId}/articles/${articleId}`);
   url.searchParams.set("fromPopular", "true");
 
   if (item.art) {
@@ -2313,14 +2300,11 @@ function getCafeThumbnailImageIndex(item) {
 function extractDaumCafeArticleIds(link) {
   try {
     const url = new URL(link);
-    const parts = url.pathname.split("/").filter(Boolean);
-    const daumCafeCode = parts[0];
-    const daumBoardId = parts[1];
-    const articleId = parts[2];
+    const [daumCafeCode, daumBoardId, articleId] = url.pathname.split("/").filter(Boolean);
     return {
-      daumCafeCode: daumCafeCode,
-      daumBoardId: daumBoardId,
-      articleId: articleId,
+      daumCafeCode,
+      daumBoardId,
+      articleId,
     };
   } catch {
     return {};
@@ -2339,11 +2323,11 @@ function extractDaumCafeArticleMeta(html) {
   ).trim();
 
   return {
-    viewCount: viewCount,
+    viewCount,
     readCount: viewCount,
-    commentCount: commentCount,
+    commentCount,
     publishedAt: writeLabel ? parseKoreanDate(writeLabel) : undefined,
-    boardName: boardName,
+    boardName,
   };
 }
 
@@ -2584,7 +2568,7 @@ async function fetchJsonWithHeaders(url, options = {}) {
       signal: controller.signal,
     });
 
-    if (!response.ok) throw new Error(response.status + " " + response.statusText);
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     return response.json();
   } finally {
     clearTimeout(timer);
@@ -2610,7 +2594,7 @@ async function fetchJson(url, options = {}) {
       signal: controller.signal,
     });
 
-    if (!response.ok) throw new Error(response.status + " " + response.statusText);
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     return response.json();
   } finally {
     clearTimeout(timer);
@@ -2632,7 +2616,7 @@ async function fetchText(url, options = {}) {
       signal: controller.signal,
     });
 
-    if (!response.ok) throw new Error(response.status + " " + response.statusText);
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     const bytes = Buffer.from(await response.arrayBuffer());
     return new TextDecoder(options.encoding || "utf-8").decode(bytes);
   } finally {
@@ -2687,7 +2671,7 @@ function isUsableArticleImage(value, options = {}) {
   try {
     const url = new URL(value);
     const hostname = url.hostname.toLowerCase();
-    const path = (url.pathname + url.search).toLowerCase();
+    const path = `${url.pathname}${url.search}`.toLowerCase();
 
     if (options.allowedHostIncludes?.length) {
       const allowed = options.allowedHostIncludes.some((part) => hostname.includes(part));
@@ -2747,20 +2731,20 @@ async function embedImageIfNeeded(imageUrl, item) {
   });
 
   if (!response.ok) {
-    const error = new Error(response.status + " " + response.statusText);
+    const error = new Error(`${response.status} ${response.statusText}`);
     if (response.status === 404 || response.status === 410) error.code = "BROKEN_IMAGE";
     throw error;
   }
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length <= 0 || bytes.length > EMBED_IMAGE_MAX_BYTES) {
-    const error = new Error("image size " + bytes.length + " bytes");
+    const error = new Error(`image size ${bytes.length} bytes`);
     error.code = bytes.length <= 0 ? "BROKEN_IMAGE" : "IMAGE_TOO_LARGE";
     throw error;
   }
 
   const mimeType = detectImageMimeType(bytes, response.headers.get("content-type"));
   if (!mimeType) throw new Error("unsupported image type");
-  return "data:" + mimeType + ";base64," + bytes.toString("base64");
+  return `data:${mimeType};base64,${bytes.toString("base64")}`;
 }
 
 function detectImageMimeType(bytes, contentType) {
@@ -2780,7 +2764,7 @@ function detectImageMimeType(bytes, contentType) {
 }
 
 function extractCellText(row, className) {
-  const pattern = new RegExp("<td\\b[^>]*class=[\"'][^\"']*" + escapeRegExp(className) + "[^\"']*[\"'][^>]*>([\\s\\S]*?)<\\/td>", "i");
+  const pattern = new RegExp(`<td\\b[^>]*class=["'][^"']*${escapeRegExp(className)}[^"']*["'][^>]*>([\\s\\S]*?)<\\/td>`, "i");
   return stripHtml(String(row || "").match(pattern)?.[1] || "");
 }
 
@@ -2863,7 +2847,7 @@ function parseKoreanDate(value) {
 function normalizeImageUrl(value, baseUrl) {
   const raw = String(value || "").replace(/&amp;/g, "&").trim();
   if (!raw) return "";
-  if (raw.startsWith("//")) return "https:" + raw;
+  if (raw.startsWith("//")) return `https:${raw}`;
   if (isHttpUrl(raw)) return raw;
   if (baseUrl) {
     try {
@@ -2904,7 +2888,7 @@ function dedupeYoutubeSearchItems(items) {
 }
 
 function inferYoutubeBoardName(query, title, fallback) {
-  const text = (query || "" + " " + (title || "")).toLowerCase();
+  const text = `${query || ""} ${title || ""}`.toLowerCase();
   if (MEDIA_CATEGORY_RULES.music.some((keyword) => text.includes(keyword.toLowerCase()))) return "음악";
   if (MEDIA_CATEGORY_RULES.game.some((keyword) => text.includes(keyword.toLowerCase()))) return "게임";
   return fallback || "LIVE";
@@ -2965,7 +2949,6 @@ function isLikelyForeignBroadcast(value) {
   return hangulCount === 0;
 }
 
-// 커뮤니티 카테고리 분류 함수
 function classifyCommunityCategory(item) {
   const sourceText = [
     item.communityCategory,
@@ -2988,7 +2971,6 @@ function classifyCommunityCategory(item) {
   return "issue";
 }
 
-// 미디어 카테고리 분류 함수
 function classifyMediaCategory(item) {
   const sourceText = [
     item.mediaCategory,
@@ -3099,7 +3081,7 @@ function isYoutubeItem(item) {
 function absolutizeUrl(value, baseUrl) {
   const raw = decodeEntities(String(value || "").trim());
   if (!raw || raw.startsWith("javascript:")) return "";
-  if (raw.startsWith("//")) return "https:" + raw;
+  if (raw.startsWith("//")) return `https:${raw}`;
   if (isHttpUrl(raw)) return raw;
   try {
     return new URL(raw, baseUrl).toString();
@@ -3276,7 +3258,7 @@ function pickPublishedAt(items, mode) {
 function buildFirebaseUrl(rawUrl, authToken) {
   const safeUrl = rawUrl.endsWith(".json")
     ? rawUrl
-    : rawUrl.replace(/\/+$/, "") + "/categories.json";
+    : `${rawUrl.replace(/\/+$/, "")}/categories.json`;
   const url = new URL(safeUrl);
 
   if (authToken && !url.searchParams.has("auth")) {
@@ -3290,11 +3272,9 @@ function loadEnvFile(filePath) {
   if (!existsSync(filePath)) return;
 
   const text = readFileSync(filePath, "utf8");
-  const lines = text.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
+  for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.indexOf("#") === 0) continue;
+    if (!trimmed || trimmed.startsWith("#")) continue;
 
     const separatorIndex = trimmed.indexOf("=");
     if (separatorIndex === -1) continue;
@@ -3303,8 +3283,8 @@ function loadEnvFile(filePath) {
     let value = trimmed.slice(separatorIndex + 1).trim();
 
     if (
-      (value.indexOf('"') === 0 && value.lastIndexOf('"') === value.length - 1) ||
-      (value.indexOf("'") === 0 && value.lastIndexOf("'") === value.length - 1)
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
     ) {
       value = value.slice(1, -1);
     }
@@ -3319,7 +3299,7 @@ function formatCountKo(value) {
   const number = toNumber(value);
   if (number >= 10000) {
     const compact = Math.round((number / 10000) * 10) / 10;
-    return compact + "만";
+    return `${compact}만`;
   }
   return number.toLocaleString("ko-KR");
 }
@@ -3329,8 +3309,8 @@ function formatDurationLabel(seconds) {
   if (totalSeconds <= 0) return "";
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
-  if (hours > 0) return hours + "시간 " + minutes + "분";
-  return Math.max(1, minutes) + "분";
+  if (hours > 0) return `${hours}시간 ${minutes}분`;
+  return `${Math.max(1, minutes)}분`;
 }
 
 function formatKstDateTime(date) {
@@ -3392,5 +3372,3 @@ startRobot().catch((error) => {
   console.error("[치명적 오류]", error);
   process.exit(1);
 });
-
-```
