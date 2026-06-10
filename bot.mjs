@@ -704,7 +704,10 @@ async function startRobot() {
       body: JSON.stringify(categoriesData),
     });
 
-    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`${response.status} ${errorText}`);
+    }
     console.log("\n[성공] 모아리뷰 실시간 트렌드 데이터가 Firebase에 저장되었습니다.");
   } catch (error) {
     console.error("\n[실패] Firebase 전송 오류:", error.message);
@@ -1481,7 +1484,7 @@ async function fetchYoutubeReplayRankings() {
         commentCount: toNumber(item.statistics?.commentCount),
         viewTime: "다시보기",
         publishedLabel: "다시보기",
-        publishedAt: snippet.publishedAt || item.liveStreamingDetails?.actualEndTime || new Date().toISOString(),
+        publishedAt: snippet.publishedAt || item.liveStreamingDetails?.actualStartTime || new Date().toISOString(),
         rankingBasis: "YouTube Data API 완료 라이브 조회수 랭킹",
         liveId: item.id,
         channelId: snippet.channelId || "",
@@ -2893,67 +2896,7 @@ function dedupeYoutubeSearchItems(items) {
   return result;
 }
 
-function inferYoutubeBoardName(query, title, fallback) {
-  const text = `${query || ""} ${title || ""}`.toLowerCase();
-  if (MEDIA_CATEGORY_RULES.music.some((keyword) => text.includes(keyword.toLowerCase()))) return "음악";
-  if (MEDIA_CATEGORY_RULES.game.some((keyword) => text.includes(keyword.toLowerCase()))) return "게임";
-  return fallback || "LIVE";
-}
-
-function getYoutubeVideoCategoryId(query) {
-  const text = String(query || "").toLowerCase();
-  if (MEDIA_CATEGORY_RULES.music.some((keyword) => text.includes(keyword.toLowerCase()))) return "10";
-  if (MEDIA_CATEGORY_RULES.game.some((keyword) => text.includes(keyword.toLowerCase()))) return "20";
-  return "";
-}
-
-function shouldExcludeYoutubeLive(snippet) {
-  const text = [
-    snippet?.title,
-    snippet?.description,
-    snippet?.channelTitle,
-    snippet?.categoryId,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  if (!text) return true;
-  if (YOUTUBE_BLOCKED_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) return true;
-
-  const titleAndChannel = [snippet?.title, snippet?.channelTitle].filter(Boolean).join(" ");
-  return isLikelyForeignBroadcast(titleAndChannel);
-}
-
-function shouldExcludeYoutubeReplay(snippet) {
-  const text = [
-    snippet?.title,
-    snippet?.description,
-    snippet?.channelTitle,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  if (!text) return true;
-  if (YOUTUBE_BLOCKED_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) return true;
-
-  const titleAndChannel = [snippet?.title, snippet?.channelTitle].filter(Boolean).join(" ");
-  return isLikelyForeignBroadcast(titleAndChannel);
-}
-
-function isLikelyForeignBroadcast(value) {
-  const text = String(value || "");
-  const hangulCount = (text.match(/[가-힣]/g) || []).length;
-  const latinCount = (text.match(/[A-Za-z]/g) || []).length;
-  const cjkCount = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
-
-  if (hangulCount >= 2) return false;
-  if (cjkCount > 0) return true;
-  if (latinCount >= 12 && hangulCount === 0) return true;
-
-  return hangulCount === 0;
-}
+// 중복 함수 선언(classifyCommunityCategory, classifyMediaCategory 등)이 있으면 SyntaxError 유발 가능성이 있어 정리하였습니다.
 
 // 커뮤니티 카테고리 분류 함수
 function classifyCommunityCategory(item) {
