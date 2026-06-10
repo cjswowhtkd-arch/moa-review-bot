@@ -694,6 +694,7 @@ async function startRobot() {
   );
 
   const previousData = DRY_RUN ? null : await fetchPreviousFirebaseData(firebaseUrl);
+  applyRisingTrendSignals(categoriesData, previousData);
   categoriesData._history = buildHistoryData(previousData, updatedAt);
   categoriesData._meta = buildRunMetadata(categoriesData, updatedAt);
 
@@ -813,6 +814,64 @@ function buildRunMetadata(categoriesData, updatedAt) {
     maxItemsPerCategory: MAX_ITEMS,
     counts,
   };
+}
+
+function getTrendFeedKeys() {
+  return [
+    ...CAFE_RANGES.map((range) => range.key),
+    ...COMMUNITY_FEEDS.map((feed) => feed.key),
+    "communityPopular",
+    ...MEDIA_FEEDS.map((feed) => feed.key),
+    "mediaTrends",
+  ];
+}
+
+function applyRisingTrendSignals(categoriesData, previousData) {
+  if (!previousData) return;
+
+  let risingCount = 0;
+  for (const key of getTrendFeedKeys()) {
+    const currentItems = Array.isArray(categoriesData[key]) ? categoriesData[key] : [];
+    const previousItems = Array.isArray(previousData[key]) ? previousData[key] : [];
+    if (currentItems.length === 0 || previousItems.length === 0) continue;
+
+    const previousRankMap = buildPreviousRankMap(previousItems);
+    currentItems.forEach((item, index) => {
+      const currentRank = toNumber(item.rank || item.naverRank || index + 1) || index + 1;
+      const previousRank = previousRankMap.get(normalizeDedupeKey(item));
+
+      item.currentRank = currentRank;
+      if (!previousRank) {
+        item.isNewEntry = true;
+        item.risingLabel = "NEW";
+        return;
+      }
+
+      const rankDelta = previousRank - currentRank;
+      item.previousRank = previousRank;
+      item.rankDelta = rankDelta;
+
+      if (rankDelta >= 2) {
+        item.isRising = true;
+        item.risingLabel = `▲ ${rankDelta}`;
+        risingCount += 1;
+      }
+    });
+  }
+
+  if (risingCount > 0) {
+    console.log(`  - 급상승 표시 ${risingCount}개 계산`);
+  }
+}
+
+function buildPreviousRankMap(items) {
+  const map = new Map();
+  items.forEach((item, index) => {
+    const key = normalizeDedupeKey(item);
+    const rank = toNumber(item.rank || item.naverRank || index + 1) || index + 1;
+    if (key && !map.has(key)) map.set(key, rank);
+  });
+  return map;
 }
 
 async function fetchPreviousFirebaseData(firebaseUrl) {
