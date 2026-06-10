@@ -1,3 +1,4 @@
+```javascript
 // [bot.mjs] MoaReview trend collector.
 // Cafe, community, and media feeds use each site's own official hot list order,
 // then rank candidates by engagement.
@@ -1002,7 +1003,7 @@ async function fetchMediaTrendBuckets() {
       return items.slice(0, source.limit || SOURCE_ITEM_LIMIT);
     } catch (error) {
       if (isOptionalMediaQuotaError(source.label, error)) {
-        console.log(`  - ${source.label}: YouTube 할당량 제한으로 이번 회차 건너뜀`);
+        console.log(`  - ${source.label}: YouTube 할당량 제한으로 이번 회차 건너뜜`);
         return [];
       }
       console.warn(`  - ${source.label} 수집 실패: ${error.message}`);
@@ -1034,6 +1035,7 @@ async function fetchMediaTrendBuckets() {
         : feed.category === "all"
           ? rankedItems
           : rankedItems.filter((item) => item.mediaCategory === feed.category);
+
     const topItems = (feed.category === "replay" ? selectBalancedTopItems(categoryItems, MAX_ITEMS) : selectMediaTopItems(categoryItems))
       .map((item, index) => toPublicTrendItem(item, index, "media", FALLBACK_IMAGES.mediaTrend));
 
@@ -1052,12 +1054,12 @@ async function fetchMediaTrendBuckets() {
 async function fetchMediaReplayRankings(liveItems) {
   console.log("  - 다시보기 후보 수집");
 
+  // 다시보기 카테고리에서 트위치(Twitch VOD) 수집 제외
   const sourceFetchers = [
-    { label: "치지직 VOD", fetcher: fetchChzzkReplayRankings },
-    { label: "Twitch VOD", fetcher: () => fetchTwitchReplayRankings(liveItems) },
+    { label: "치지직 VOD", fetcher: fetchChzzkReplayRankings }
   ];
   if (ENABLE_YOUTUBE_REPLAY) {
-    sourceFetchers.splice(1, 0, { label: "YouTube 완료 라이브", fetcher: fetchYoutubeReplayRankings });
+    sourceFetchers.push({ label: "YouTube 완료 라이브", fetcher: fetchYoutubeReplayRankings });
   }
 
   const sourceResults = await mapLimit(sourceFetchers, SOURCE_CONCURRENCY, async (source) => {
@@ -1067,7 +1069,7 @@ async function fetchMediaReplayRankings(liveItems) {
       return items;
     } catch (error) {
       if (isOptionalMediaQuotaError(source.label, error)) {
-        console.log(`    · ${source.label}: YouTube 할당량 제한으로 이번 회차 건너뜀`);
+        console.log(`    · ${source.label}: YouTube 할당량 제한으로 이번 회차 건너뜜`);
         return [];
       }
       console.warn(`    · ${source.label} 수집 실패: ${error.message}`);
@@ -1075,7 +1077,9 @@ async function fetchMediaReplayRankings(liveItems) {
     }
   });
 
+  // 다시보기 카테고리에 트위치 아이템이 섞이지 않도록 재검증 필터링 추가
   return dedupeItems(sourceResults.flat())
+    .filter((item) => !isTwitchItem(item))
     .map((item) => ({
       ...item,
       type: "media",
@@ -1089,7 +1093,7 @@ async function fetchMediaReplayRankings(liveItems) {
 function buildMusicMediaItems(liveItems, replayItems) {
   const liveMusicItems = liveItems.filter((item) => item.mediaCategory === "music" || classifyMediaCategory(item) === "music");
   const replayMusicItems = replayItems
-    .filter((item) => classifyMediaCategory(item) === "music")
+    .filter((item) => classifyMediaCategory(item) === "music" && !isTwitchItem(item)) // 트위치 아이템 제거 추가
     .map((item) => ({
       ...item,
       mediaCategory: "music",
@@ -1537,6 +1541,7 @@ async function fetchChzzkReplayRankings() {
     .slice(0, Math.max(MAX_ITEMS * 2, 20));
 }
 
+// 다시보기에서 트위치 VOD는 올라오지 않게끔 사용하지 않음 (fetchMediaReplayRankings에서 제외)
 async function fetchTwitchReplayRankings(liveItems = []) {
   const clientId = process.env.TWITCH_CLIENT_ID || "";
   const clientSecret = process.env.TWITCH_CLIENT_SECRET || "";
@@ -2950,6 +2955,7 @@ function isLikelyForeignBroadcast(value) {
   return hangulCount === 0;
 }
 
+// 커뮤니티 카테고리 분류 함수
 function classifyCommunityCategory(item) {
   const sourceText = [
     item.communityCategory,
@@ -2972,6 +2978,7 @@ function classifyCommunityCategory(item) {
   return "issue";
 }
 
+// 미디어 카테고리 분류 함수
 function classifyMediaCategory(item) {
   const sourceText = [
     item.mediaCategory,
@@ -3373,3 +3380,5 @@ startRobot().catch((error) => {
   console.error("[치명적 오류]", error);
   process.exit(1);
 });
+
+```
