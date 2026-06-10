@@ -34,6 +34,8 @@ const RECENCY_HOURS = toPositiveInt(process.env.RECENCY_HOURS, 48);
 const EMBED_IMAGE_MAX_BYTES = toPositiveInt(process.env.EMBED_IMAGE_MAX_BYTES, 700000);
 const UPDATE_INTERVAL_MINUTES = toPositiveInt(process.env.UPDATE_INTERVAL_MINUTES, 60);
 const DRY_RUN = process.env.DRY_RUN === "1";
+const HISTORY_PICK_LIMIT = toPositiveInt(process.env.HISTORY_PICK_LIMIT, 10);
+const HISTORY_IMAGE_MAX_CHARS = toPositiveInt(process.env.HISTORY_IMAGE_MAX_CHARS, 120000);
 
 const NAVER_CAFE_API_BASE =
   "https://apis.naver.com/cafe-home-web/cafe-home/v1/popular";
@@ -114,6 +116,12 @@ const MEDIA_FEEDS = [
   { key: "mediaGame", label: "게임", category: "game" },
   { key: "mediaTalk", label: "토크방송", category: "talk" },
   { key: "mediaMusic", label: "음악라디오", category: "music" },
+];
+
+const HISTORY_PICK_SOURCES = [
+  { key: "mediaHot", sectionKey: "mediaTrend", feedLabel: "실시간 방송", maxItems: 4 },
+  { key: "daily", sectionKey: "naverCafe", feedLabel: "카페 인기글", maxItems: 4 },
+  { key: "communityPopular", sectionKey: "community", feedLabel: "화제글 모음", maxItems: 4 },
 ];
 
 const MEDIA_CATEGORY_RULES = {
@@ -679,6 +687,14 @@ async function startRobot() {
 
   const updatedAt = new Date();
   categoriesData.updatedAt = updatedAt.toISOString();
+
+  const firebaseUrl = buildFirebaseUrl(
+    process.env.FIREBASE_DB_URL || DEFAULT_FIREBASE_DB_URL,
+    process.env.FIREBASE_AUTH_TOKEN
+  );
+
+  const previousData = DRY_RUN ? null : await fetchPreviousFirebaseData(firebaseUrl);
+  categoriesData._history = buildHistoryData(previousData, updatedAt);
   categoriesData._meta = buildRunMetadata(categoriesData, updatedAt);
 
   if (DRY_RUN) {
@@ -690,11 +706,6 @@ async function startRobot() {
     }
     return;
   }
-
-  const firebaseUrl = buildFirebaseUrl(
-    process.env.FIREBASE_DB_URL || DEFAULT_FIREBASE_DB_URL,
-    process.env.FIREBASE_AUTH_TOKEN
-  );
 
   try {
     const response = await fetch(firebaseUrl, {
@@ -802,6 +813,132 @@ function buildRunMetadata(categoriesData, updatedAt) {
     maxItemsPerCategory: MAX_ITEMS,
     counts,
   };
+}
+
+async function fetchPreviousFirebaseData(firebaseUrl) {
+  try {
+    const response = await fetch(firebaseUrl, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": USER_AGENT,
+      },
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    });
+
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    return (await response.json()) || null;
+  } catch (error) {
+    console.warn(`  - 이전 Firebase 데이터 확인 실패: ${error.message}`);
+    return null;
+  }
+}
+
+function buildHistoryData(previousData, updatedAt) {
+  const previousHistory =
+    previousData && typeof previousData._history === "object" && !Array.isArray(previousData._history)
+      ? previousData._history
+      : {};
+  const history = { ...previousHistory };
+  const currentDateKey = formatKstDateKey(updatedAt);
+  const previousDateKey = getFirebaseDataKstDateKey(previousData);
+
+  if (previousData && previousDateKey && previousDateKey !== currentDateKey) {
+    const yesterdayPicks = buildYesterdayPicks(previousData);
+    history.yesterdayDateKst = previousDateKey;
+    history.yesterdayPicks = yesterdayPicks;
+    history.createdAt = updatedAt.toISOString();
+    history.createdAtKst = formatKstDateTime(updatedAt);
+    console.log(`  - 어제 놓친 인기글 ${yesterdayPicks.length}개 보관 (${previousDateKey})`);
+  }
+
+  return history;
+}
+
+function buildYesterdayPicks(previousData) {
+  const sourceLists = HISTORY_PICK_SOURCES.map((source) =>
+    normalizeHistoryItems(previousData?.[source.key], source).slice(0, source.maxItems)
+  );
+  const merged = [];
+  const maxLength = Math.max(...sourceLists.map((items) => items.length), 0);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    for (const list of sourceLists) {
+      if (list[index]) merged.push(list[index]);
+      if (merged.length >= HISTORY_PICK_LIMIT) break;
+    }
+    if (merged.length >= HISTORY_PICK_LIMIT) break;
+  }
+
+  return dedupeItems(merged).slice(0, HISTORY_PICK_LIMIT).map((item, index) => ({
+    ...item,
+    rank: index + 1,
+  }));
+}
+
+function normalizeHistoryItems(value, source) {
+  const items = Array.isArray(value) ? value : Object.values(value || {});
+  return items
+    .filter(Boolean)
+    .sort((a, b) => normalizeRank(a.rank || a.naverRank) - normalizeRank(b.rank || b.naverRank))
+    .map((item) => toHistoryPickItem(item, source))
+    .filter((item) => item.title && item.link);
+}
+
+function toHistoryPickItem(item, source) {
+  const fallbackImage = FALLBACK_IMAGES[source.sectionKey] || FALLBACK_IMAGES.naverCafe;
+  const image = compactHistoryImage(
+    firstNonEmpty(item.img, item.thumbnail, item.thumbnailUrl, item.image, item.videoThumbnail, item.contentThumbnail),
+    fallbackImage
+  );
+
+  return {
+    title: firstNonEmpty(item.title, item.subject, item.name, item.videoTitle, "제목 없음"),
+    link: firstNonEmpty(item.link, item.url, item.articleUrl, item.watchUrl, item.contentUrl),
+    img: image,
+    thumbnail: image,
+    source: firstNonEmpty(item.source, item.siteName, item.cafeName, item.communityName, item.platformName, source.feedLabel),
+    siteName: firstNonEmpty(item.siteName, item.source, source.feedLabel),
+    boardName: firstNonEmpty(item.boardName, item.channelName, source.feedLabel),
+    cafeName: firstNonEmpty(item.cafeName, item.source),
+    communityName: firstNonEmpty(item.communityName, item.source),
+    platformName: firstNonEmpty(item.platformName, item.source),
+    channelName: firstNonEmpty(item.channelName, item.boardName),
+    sectionKey: source.sectionKey,
+    feedKey: source.key,
+    feedLabel: source.feedLabel,
+    originalRank: toNumber(item.rank || item.naverRank),
+    viewCount: toNumber(item.viewCount || item.readCount || item.views),
+    readCount: toNumber(item.readCount || item.viewCount),
+    viewerCount: toNumber(item.viewerCount || item.concurrentUserCount),
+    concurrentUserCount: toNumber(item.concurrentUserCount || item.viewerCount),
+    recommendCount: toNumber(item.recommendCount || item.likeCount || item.likes),
+    commentCount: toNumber(item.commentCount || item.comments || item.replyCount),
+    publishedAt: firstNonEmpty(item.publishedAt, item.createdAt, item.openDate),
+    rankingBasis: `어제 ${source.feedLabel} TOP`,
+    mediaCategory: item.mediaCategory,
+    communityCategory: item.communityCategory,
+  };
+}
+
+function compactHistoryImage(value, fallbackImage) {
+  const image = String(value || "").trim();
+  if (!image) return fallbackImage;
+  if (image.startsWith("data:image/") && image.length > HISTORY_IMAGE_MAX_CHARS) return fallbackImage;
+  return image;
+}
+
+function getFirebaseDataKstDateKey(data) {
+  const kstText = firstNonEmpty(data?._meta?.updatedAtKst);
+  if (/^\d{4}-\d{2}-\d{2}/.test(kstText)) return kstText.slice(0, 10);
+
+  const isoText = firstNonEmpty(data?._meta?.updatedAt, data?.updatedAt);
+  const date = new Date(isoText || "");
+  if (Number.isNaN(date.getTime())) return "";
+  return formatKstDateKey(date);
+}
+
+function firstNonEmpty(...values) {
+  return values.find((value) => String(value || "").trim()) || "";
 }
 
 async function fetchAggregateTrend({ key, label, type, sources, fallbackImage }) {
@@ -3336,6 +3473,10 @@ function formatKstDateTime(date) {
     second: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function formatKstDateKey(date) {
+  return formatKstDateTime(date).slice(0, 10);
 }
 
 function uniqueCompact(values) {
