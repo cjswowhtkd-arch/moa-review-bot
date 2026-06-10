@@ -202,6 +202,98 @@
             font-weight: 800;
         }
 
+        .quick-panel {
+            display: grid;
+            gap: 10px;
+            margin: 0 0 14px;
+        }
+
+        .search-box {
+            width: 100%;
+            height: 44px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            background: rgba(10, 12, 15, 0.76);
+            color: var(--text);
+            padding: 0 14px;
+            font-size: 14px;
+            font-weight: 800;
+            outline: none;
+        }
+
+        .search-box::placeholder {
+            color: rgba(255, 255, 255, 0.44);
+        }
+
+        .search-box:focus {
+            border-color: rgba(54, 215, 255, 0.62);
+            box-shadow: 0 0 0 3px rgba(54, 215, 255, 0.12);
+        }
+
+        .top-picks {
+            display: grid;
+            gap: 8px;
+            margin: 0 0 14px;
+        }
+
+        .top-picks.hidden {
+            display: none;
+        }
+
+        .top-picks-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: rgba(255, 255, 255, 0.88);
+            font-size: 12px;
+            font-weight: 900;
+            margin: 0 2px;
+        }
+
+        .top-pick-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .top-pick {
+            display: grid;
+            grid-template-columns: 28px minmax(0, 1fr) 46px;
+            gap: 10px;
+            align-items: center;
+            min-height: 58px;
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-radius: 12px;
+            background: rgba(19, 22, 27, 0.9);
+            color: var(--text);
+            padding: 8px 10px;
+            cursor: pointer;
+        }
+
+        .top-pick-rank {
+            color: var(--accent);
+            font-size: 13px;
+            font-weight: 950;
+        }
+
+        .top-pick-title {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 13px;
+            font-weight: 850;
+        }
+
+        .top-pick-tag {
+            justify-self: end;
+            color: rgba(255, 255, 255, 0.68);
+            font-size: 10px;
+            font-weight: 900;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 999px;
+            padding: 4px 6px;
+        }
+
         .grid-container {
             display: flex;
             flex-direction: column;
@@ -224,6 +316,18 @@
             position: relative;
             z-index: 0;
             transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+        }
+
+        .trend-card.mediaTrend {
+            border-color: rgba(54, 215, 255, 0.16);
+        }
+
+        .trend-card.naverCafe {
+            border-color: rgba(183, 243, 106, 0.15);
+        }
+
+        .trend-card.community {
+            border-color: rgba(255, 61, 104, 0.16);
         }
 
         .trend-card.is-previewing {
@@ -280,6 +384,63 @@
             -webkit-line-clamp: 1;
             -webkit-box-orient: vertical;
             overflow: hidden;
+        }
+
+        .reason-line {
+            margin: 8px 0 0;
+            color: rgba(255, 255, 255, 0.56);
+            font-size: 11px;
+            line-height: 1.35;
+            font-weight: 800;
+            display: -webkit-box;
+            -webkit-line-clamp: 1;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .badge-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 10px;
+            min-height: 24px;
+        }
+
+        .trend-badge {
+            color: #fff;
+            background: rgba(255, 61, 104, 0.18);
+            border: 1px solid rgba(255, 61, 104, 0.42);
+            border-radius: 999px;
+            padding: 4px 7px;
+            font-size: 10px;
+            font-weight: 950;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 6px;
+            margin-left: auto;
+        }
+
+        .icon-btn {
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.72);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 900;
+        }
+
+        .icon-btn.active {
+            color: #fff;
+            border-color: rgba(255, 61, 104, 0.62);
+            background: rgba(255, 61, 104, 0.2);
         }
 
         .thumb-box {
@@ -416,9 +577,9 @@
         </section>
 
         <nav class="main-tab-wrapper" aria-label="메인 카테고리">
-            <button class="main-tab-btn active" data-section="mediaTrend">미디어 트렌드</button>
+            <button class="main-tab-btn active" data-section="mediaTrend">실시간 방송</button>
             <button class="main-tab-btn" data-section="naverCafe">카페 인기글</button>
-            <button class="main-tab-btn" data-section="community">커뮤니티 인기</button>
+            <button class="main-tab-btn" data-section="community">화제글 모음</button>
         </nav>
 
         <nav id="feedFilterTabs" class="tab-wrapper filter-tabs" aria-label="세부 필터">
@@ -428,6 +589,12 @@
             <button id="tab-mediaTalk" class="tab-btn" data-feed="mediaTalk">토크방송</button>
             <button id="tab-mediaMusic" class="tab-btn" data-feed="mediaMusic">음악라디오</button>
         </nav>
+
+        <div class="quick-panel">
+            <input id="searchInput" class="search-box" type="search" placeholder="제목, 출처, 키워드 검색" autocomplete="off">
+        </div>
+
+        <section id="topPicks" class="top-picks hidden" aria-label="오늘의 TOP 3"></section>
 
         <div class="summary-row">
             <span id="activeSummary">라이브HOT TOP 10</span>
@@ -451,7 +618,7 @@
 
         const sections = {
             mediaTrend: {
-                label: "미디어 트렌드",
+                label: "실시간 방송",
                 source: "치지직,SOOP,트위치,유튜브 시청자수",
                 empty: "미디어 트렌드 데이터 연결 준비 중입니다.",
                 feeds: [
@@ -463,9 +630,9 @@
                     },
                     {
                         key: "mediaReplay",
-                        label: "다시보기",
+                        label: "인기 다시보기",
                         dataKeys: ["mediaReplay"],
-                        source: "유튜브·트위치 다시보기 조회수"
+                        source: "치지직 다시보기 조회수"
                     },
                     {
                         key: "mediaGame",
@@ -496,11 +663,11 @@
                     { key: "weekly", label: "주간TOP", dataKeys: ["weekly"], source: "네이버카페·다음카페 주간 TOP" },
                     { key: "cafeTravel", label: "여행후기", dataKeys: ["cafeTravel"], source: "네이버카페·다음카페 여행 후기 인기글" },
                     { key: "cafeFood", label: "맛집리뷰", dataKeys: ["cafeFood"], source: "네이버카페·다음카페 맛집 리뷰 인기글" },
-                    { key: "cafeOutfit", label: "오늘의 코디", dataKeys: ["cafeOutfit"], source: "네이버카페·다음카페 오늘의 코디 인기글" }
+                    { key: "cafeOutfit", label: "패션/코디", dataKeys: ["cafeOutfit"], source: "네이버카페·다음카페 오늘의 코디 인기글" }
                 ]
             },
             community: {
-                label: "커뮤니티 인기",
+                label: "화제글 모음",
                 source: "디시·더쿠·루리웹·뽐뿌·인스티즈 통합 랭킹",
                 empty: "커뮤니티 인기 데이터 연결 준비 중입니다.",
                 feeds: [
@@ -539,12 +706,17 @@
             community: "communityIssue"
         };
         let rawDataStore = {};
+        let searchQuery = "";
+        const favoriteStorageKey = "moaReviewFavorites";
+        const favoriteLinks = new Set(loadFavorites());
 
         const grid = document.getElementById("cardGrid");
         const syncStatus = document.getElementById("syncStatus");
         const activeSummary = document.getElementById("activeSummary");
         const activeSource = document.getElementById("activeSource");
         const feedFilterTabs = document.getElementById("feedFilterTabs");
+        const topPicks = document.getElementById("topPicks");
+        const searchInput = document.getElementById("searchInput");
 
         async function fetchSystem() {
             try {
@@ -553,7 +725,7 @@
                 if (!res.ok) throw new Error(`Firebase ${res.status}`);
 
                 rawDataStore = await res.json() || {};
-                syncStatus.textContent = `${formatTime(new Date())} 갱신`;
+                syncStatus.textContent = buildSyncLabel(rawDataStore);
                 renderFeedTabs();
                 paintCards();
             } catch (err) {
@@ -587,13 +759,17 @@
             grid.innerHTML = "";
             const section = getActiveSection();
             const feed = getActiveFeed();
-            const activeList = findDataList(feed.dataKeys).slice(0, maxItems);
+            const baseList = findDataList(feed.dataKeys);
+            const activeList = filterBySearch(baseList, activeSection).slice(0, maxItems);
 
-            activeSummary.textContent = `${feed.label} ${activeList.length}/${maxItems}`;
+            activeSummary.textContent = searchQuery
+                ? `${feed.label} 검색 ${activeList.length}개`
+                : `${feed.label} ${activeList.length}/${maxItems}`;
             activeSource.textContent = feed.source || section.source;
+            renderTopPicks(activeList, activeSection, feed);
 
             if (activeList.length === 0) {
-                showEmpty(section.empty);
+                showEmpty(searchQuery ? "검색 결과가 없습니다." : section.empty);
                 return;
             }
 
@@ -605,11 +781,12 @@
         function createCard(item, index, sectionKey) {
             const view = toCardView(item, index, sectionKey);
             const card = document.createElement("article");
-            card.className = "trend-card";
+            card.className = `trend-card ${sectionKey}`;
             card.setAttribute("role", "link");
             card.tabIndex = 0;
             card.addEventListener("click", () => openArticle(view.link));
             card.addEventListener("keydown", (event) => {
+                if (event.target.closest("button")) return;
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     openArticle(view.link);
@@ -635,7 +812,48 @@
             desc.className = "card-desc";
             desc.textContent = view.meta;
 
-            copy.append(rankRow, title, desc);
+            const reason = document.createElement("p");
+            reason.className = "reason-line";
+            reason.textContent = view.reason;
+
+            const badgeRow = document.createElement("div");
+            badgeRow.className = "badge-row";
+            for (const badgeText of view.badges) {
+                const badge = document.createElement("span");
+                badge.className = "trend-badge";
+                badge.textContent = badgeText;
+                badgeRow.appendChild(badge);
+            }
+
+            const actions = document.createElement("div");
+            actions.className = "card-actions";
+            const favoriteButton = document.createElement("button");
+            favoriteButton.type = "button";
+            favoriteButton.className = `icon-btn${isFavorite(view.link) ? " active" : ""}`;
+            favoriteButton.title = "찜하기";
+            favoriteButton.setAttribute("aria-label", "찜하기");
+            favoriteButton.textContent = "☆";
+            if (isFavorite(view.link)) favoriteButton.textContent = "★";
+            favoriteButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                toggleFavorite(view.link, favoriteButton);
+            });
+
+            const shareButton = document.createElement("button");
+            shareButton.type = "button";
+            shareButton.className = "icon-btn";
+            shareButton.title = "공유하기";
+            shareButton.setAttribute("aria-label", "공유하기");
+            shareButton.textContent = "↗";
+            shareButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                shareArticle(view);
+            });
+
+            actions.append(favoriteButton, shareButton);
+            badgeRow.appendChild(actions);
+
+            copy.append(rankRow, title, desc, reason, badgeRow);
 
             const thumbBox = document.createElement("div");
             thumbBox.className = "thumb-box";
@@ -681,6 +899,7 @@
                 rank: firstNumber(item.rank, item.naverRank) || index + 1,
                 title,
                 link,
+                publishedAt: firstText(item.publishedAt, item.createdAt, item.openDate),
                 previewUrl: getMediaPreviewUrl(item, link, sectionKey),
                 previewType: getMediaPreviewType(item, sectionKey),
                 img: firstText(
@@ -702,8 +921,155 @@
                     recommendCount,
                     commentCount,
                     mediaCategory: firstText(item.mediaCategory, item.category)
+                }),
+                reason: buildReason(sectionKey, {
+                    viewerCount,
+                    viewCount,
+                    recommendCount,
+                    commentCount,
+                    source
+                }),
+                badges: buildBadges({
+                    rank: firstNumber(item.rank, item.naverRank) || index + 1,
+                    publishedAt: firstText(item.publishedAt, item.createdAt, item.openDate),
+                    sectionKey
                 })
             };
+        }
+
+        function renderTopPicks(items, sectionKey, feed) {
+            topPicks.innerHTML = "";
+            const picks = items.slice(0, 3).map((item, index) => toCardView(item, index, sectionKey));
+            topPicks.classList.toggle("hidden", picks.length === 0);
+            if (picks.length === 0) return;
+
+            const title = document.createElement("div");
+            title.className = "top-picks-title";
+            const left = document.createElement("span");
+            left.textContent = "오늘의 TOP 3";
+            const right = document.createElement("span");
+            right.textContent = feed.label;
+            title.append(left, right);
+
+            const list = document.createElement("div");
+            list.className = "top-pick-list";
+
+            picks.forEach((view) => {
+                const item = document.createElement("button");
+                item.type = "button";
+                item.className = "top-pick";
+                item.addEventListener("click", () => openArticle(view.link));
+
+                const rank = document.createElement("span");
+                rank.className = "top-pick-rank";
+                rank.textContent = String(view.rank).padStart(2, "0");
+
+                const itemTitle = document.createElement("span");
+                itemTitle.className = "top-pick-title";
+                itemTitle.textContent = view.title;
+
+                const tag = document.createElement("span");
+                tag.className = "top-pick-tag";
+                tag.textContent = view.badges[0] || "HOT";
+
+                item.append(rank, itemTitle, tag);
+                list.appendChild(item);
+            });
+
+            topPicks.append(title, list);
+        }
+
+        function buildReason(sectionKey, values) {
+            if (sectionKey === "mediaTrend") {
+                if (values.viewerCount > 0) return `실시간 시청자 ${formatCount(values.viewerCount)}명 기준으로 상위권이에요.`;
+                if (values.viewCount > 0) return `다시보기 조회 ${formatCount(values.viewCount)}회로 반응이 높아요.`;
+                return "방송 플랫폼 인기 목록에서 잡힌 콘텐츠예요.";
+            }
+
+            if (sectionKey === "naverCafe") {
+                if (values.viewCount > 0 && values.commentCount > 0) {
+                    return `조회 ${formatCount(values.viewCount)}회와 댓글 ${formatCount(values.commentCount)}개로 반응이 커요.`;
+                }
+                if (values.recommendCount > 0) return `좋아요 ${formatCount(values.recommendCount)}개로 카페 반응이 좋아요.`;
+                return "네이버·다음 카페 인기 목록에서 올라온 글이에요.";
+            }
+
+            if (values.commentCount > 0 && values.recommendCount > 0) {
+                return `추천 ${formatCount(values.recommendCount)}개, 댓글 ${formatCount(values.commentCount)}개로 화제성이 높아요.`;
+            }
+            if (values.viewCount > 0) return `조회 ${formatCount(values.viewCount)}회로 커뮤니티에서 많이 본 글이에요.`;
+            return `${values.source || "커뮤니티"} 인기 목록에서 잡힌 글이에요.`;
+        }
+
+        function buildBadges({ rank, publishedAt }) {
+            const badges = [];
+            if (rank <= 3) badges.push("HOT");
+            const age = ageInHours(publishedAt);
+            if (age >= 0 && age <= 6) badges.push("NEW");
+            return badges.slice(0, 2);
+        }
+
+        function filterBySearch(items, sectionKey) {
+            const query = normalizeSearchText(searchQuery);
+            if (!query) return items;
+
+            return items.filter((item, index) => {
+                const view = toCardView(item, index, sectionKey);
+                const haystack = normalizeSearchText([
+                    view.title,
+                    view.meta,
+                    view.reason,
+                    getItemSource(item, sectionKey),
+                ].join(" "));
+                return haystack.includes(query);
+            });
+        }
+
+        function toggleFavorite(link, button) {
+            const target = safeUrl(link);
+            if (!target) return;
+
+            if (favoriteLinks.has(target)) {
+                favoriteLinks.delete(target);
+                button.classList.remove("active");
+                button.textContent = "☆";
+            } else {
+                favoriteLinks.add(target);
+                button.classList.add("active");
+                button.textContent = "★";
+            }
+
+            localStorage.setItem(favoriteStorageKey, JSON.stringify([...favoriteLinks]));
+        }
+
+        function loadFavorites() {
+            try {
+                const values = JSON.parse(localStorage.getItem(favoriteStorageKey) || "[]");
+                return Array.isArray(values) ? values.filter(Boolean) : [];
+            } catch {
+                return [];
+            }
+        }
+
+        function isFavorite(link) {
+            const target = safeUrl(link);
+            return target ? favoriteLinks.has(target) : false;
+        }
+
+        async function shareArticle(view) {
+            const target = safeUrl(view.link);
+            if (!target) return;
+
+            if (navigator.share) {
+                await navigator.share({ title: view.title, url: target }).catch(() => {});
+                return;
+            }
+
+            await navigator.clipboard?.writeText(target).catch(() => {});
+            syncStatus.textContent = "링크 복사됨";
+            window.setTimeout(() => {
+                syncStatus.textContent = buildSyncLabel(rawDataStore);
+            }, 1400);
         }
 
         function attachMediaPreview(card, thumbBox, view) {
@@ -930,6 +1296,32 @@
             }).format(date);
         }
 
+        function buildSyncLabel(store) {
+            const updatedAtKst = firstText(store?._meta?.updatedAtKst);
+            if (updatedAtKst) return `${updatedAtKst.slice(11, 16)} 갱신`;
+
+            const updatedAt = firstText(store?.updatedAt);
+            if (updatedAt) {
+                const date = new Date(updatedAt);
+                if (!Number.isNaN(date.getTime())) return `${formatTime(date)} 갱신`;
+            }
+
+            return `${formatTime(new Date())} 갱신`;
+        }
+
+        function ageInHours(value) {
+            const date = new Date(value || "");
+            if (Number.isNaN(date.getTime())) return -1;
+            return (Date.now() - date.getTime()) / (60 * 60 * 1000);
+        }
+
+        function normalizeSearchText(value) {
+            return String(value || "")
+                .toLowerCase()
+                .replace(/\s+/g, "")
+                .trim();
+        }
+
         function openArticle(link) {
             const target = safeUrl(link);
             if (target) window.location.href = target;
@@ -937,6 +1329,11 @@
 
         document.querySelectorAll(".main-tab-btn").forEach((button) => {
             button.addEventListener("click", () => setActiveSection(button.dataset.section));
+        });
+
+        searchInput.addEventListener("input", (event) => {
+            searchQuery = event.target.value;
+            paintCards();
         });
 
         renderFeedTabs();
