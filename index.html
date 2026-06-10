@@ -202,34 +202,6 @@
             font-weight: 800;
         }
 
-        .quick-panel {
-            display: grid;
-            gap: 10px;
-            margin: 0 0 14px;
-        }
-
-        .search-box {
-            width: 100%;
-            height: 44px;
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 12px;
-            background: rgba(10, 12, 15, 0.76);
-            color: var(--text);
-            padding: 0 14px;
-            font-size: 14px;
-            font-weight: 800;
-            outline: none;
-        }
-
-        .search-box::placeholder {
-            color: rgba(255, 255, 255, 0.44);
-        }
-
-        .search-box:focus {
-            border-color: rgba(54, 215, 255, 0.62);
-            box-shadow: 0 0 0 3px rgba(54, 215, 255, 0.12);
-        }
-
         .top-picks {
             display: grid;
             gap: 8px;
@@ -328,12 +300,6 @@
 
         .trend-card.community {
             border-color: rgba(255, 61, 104, 0.16);
-        }
-
-        .trend-card.is-previewing {
-            z-index: 20;
-            border-color: rgba(255, 61, 104, 0.54);
-            box-shadow: 0 24px 46px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 61, 104, 0.18);
         }
 
         .trend-card:active {
@@ -447,7 +413,7 @@
             width: 108px;
             height: 108px;
             border-radius: 8px;
-            overflow: visible;
+            overflow: hidden;
             background: #252932;
             border: 1px solid rgba(255, 255, 255, 0.08);
             position: relative;
@@ -461,55 +427,7 @@
             object-fit: cover;
             display: block;
             border-radius: 7px;
-            transition: opacity 0.18s ease, transform 0.18s ease, filter 0.18s ease;
-        }
-
-        .media-preview {
-            position: absolute;
-            right: 0;
-            top: 0;
-            width: min(340px, calc(100vw - 44px));
-            aspect-ratio: 16 / 9;
-            border: 0;
-            border-radius: 14px;
-            background: #050609;
-            opacity: 0;
-            pointer-events: none;
-            transform: scale(0.68);
-            transform-origin: right top;
-            transition: opacity 0.2s ease, transform 0.22s ease;
-            z-index: 10;
-            box-shadow: 0 22px 54px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(255, 255, 255, 0.16);
-        }
-
-        .thumb-box .media-preview {
-            width: min(340px, calc(100vw - 44px));
-            height: auto;
-        }
-
-        .media-preview-image {
-            display: block;
-            object-fit: cover;
-        }
-
-        .thumb-box.is-previewing img {
-            opacity: 0.3;
-            transform: scale(0.94);
-            filter: brightness(0.58) blur(1px);
-        }
-
-        .thumb-box.is-previewing .media-preview {
-            opacity: 1;
-            pointer-events: auto;
-            transform: scale(1);
-        }
-
-        @media (max-width: 480px) {
-            .media-preview,
-            .thumb-box .media-preview {
-                width: min(320px, calc(100vw - 30px));
-                right: -2px;
-            }
+            transition: opacity 0.18s ease, filter 0.18s ease;
         }
 
         .empty-state {
@@ -567,7 +485,7 @@
     <main class="app-shell">
         <header class="top-bar">
             <div class="brand-mark" aria-hidden="true">M</div>
-            <div id="syncStatus" class="sync-pill">동기화 중</div>
+            <div id="syncStatus" class="sync-pill">다음 갱신 확인 중</div>
         </header>
 
         <section class="hero">
@@ -589,10 +507,6 @@
             <button id="tab-mediaTalk" class="tab-btn" data-feed="mediaTalk">토크방송</button>
             <button id="tab-mediaMusic" class="tab-btn" data-feed="mediaMusic">음악라디오</button>
         </nav>
-
-        <div class="quick-panel">
-            <input id="searchInput" class="search-box" type="search" placeholder="제목, 출처, 키워드 검색" autocomplete="off">
-        </div>
 
         <section id="topPicks" class="top-picks hidden" aria-label="오늘의 TOP 3"></section>
 
@@ -706,7 +620,6 @@
             community: "communityIssue"
         };
         let rawDataStore = {};
-        let searchQuery = "";
         const favoriteStorageKey = "moaReviewFavorites";
         const favoriteLinks = new Set(loadFavorites());
 
@@ -716,7 +629,6 @@
         const activeSource = document.getElementById("activeSource");
         const feedFilterTabs = document.getElementById("feedFilterTabs");
         const topPicks = document.getElementById("topPicks");
-        const searchInput = document.getElementById("searchInput");
 
         async function fetchSystem() {
             try {
@@ -725,11 +637,11 @@
                 if (!res.ok) throw new Error(`Firebase ${res.status}`);
 
                 rawDataStore = await res.json() || {};
-                syncStatus.textContent = buildSyncLabel(rawDataStore);
+                syncStatus.textContent = buildNextSyncLabel(rawDataStore);
                 renderFeedTabs();
                 paintCards();
             } catch (err) {
-                syncStatus.textContent = "동기화 대기";
+                syncStatus.textContent = "다음 갱신 대기";
                 showEmpty("실시간 트렌드를 동기화하는 데 대기 시간이 필요합니다.");
             }
         }
@@ -759,17 +671,14 @@
             grid.innerHTML = "";
             const section = getActiveSection();
             const feed = getActiveFeed();
-            const baseList = findDataList(feed.dataKeys);
-            const activeList = filterBySearch(baseList, activeSection).slice(0, maxItems);
+            const activeList = findDataList(feed.dataKeys).slice(0, maxItems);
 
-            activeSummary.textContent = searchQuery
-                ? `${feed.label} 검색 ${activeList.length}개`
-                : `${feed.label} ${activeList.length}/${maxItems}`;
+            activeSummary.textContent = `${feed.label} ${activeList.length}/${maxItems}`;
             activeSource.textContent = feed.source || section.source;
             renderTopPicks(activeList, activeSection, feed);
 
             if (activeList.length === 0) {
-                showEmpty(searchQuery ? "검색 결과가 없습니다." : section.empty);
+                showEmpty(section.empty);
                 return;
             }
 
@@ -870,10 +779,6 @@
 
             thumbBox.appendChild(img);
 
-            if (sectionKey === "mediaTrend" && (view.previewUrl || view.img)) {
-                attachMediaPreview(card, thumbBox, view);
-            }
-
             card.append(copy, thumbBox);
             return card;
         }
@@ -900,8 +805,6 @@
                 title,
                 link,
                 publishedAt: firstText(item.publishedAt, item.createdAt, item.openDate),
-                previewUrl: getMediaPreviewUrl(item, link, sectionKey),
-                previewType: getMediaPreviewType(item, sectionKey),
                 img: firstText(
                     item.img,
                     item.thumbnail,
@@ -1009,22 +912,6 @@
             return badges.slice(0, 2);
         }
 
-        function filterBySearch(items, sectionKey) {
-            const query = normalizeSearchText(searchQuery);
-            if (!query) return items;
-
-            return items.filter((item, index) => {
-                const view = toCardView(item, index, sectionKey);
-                const haystack = normalizeSearchText([
-                    view.title,
-                    view.meta,
-                    view.reason,
-                    getItemSource(item, sectionKey),
-                ].join(" "));
-                return haystack.includes(query);
-            });
-        }
-
         function toggleFavorite(link, button) {
             const target = safeUrl(link);
             if (!target) return;
@@ -1068,56 +955,8 @@
             await navigator.clipboard?.writeText(target).catch(() => {});
             syncStatus.textContent = "링크 복사됨";
             window.setTimeout(() => {
-                syncStatus.textContent = buildSyncLabel(rawDataStore);
+                syncStatus.textContent = buildNextSyncLabel(rawDataStore);
             }, 1400);
-        }
-
-        function attachMediaPreview(card, thumbBox, view) {
-            const useIframe = view.previewType === "iframe" && view.previewUrl;
-            const preview = document.createElement(useIframe ? "iframe" : "img");
-            preview.className = "media-preview";
-            preview.title = `${view.title} 미리보기`;
-            if (useIframe) {
-                preview.loading = "lazy";
-                preview.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
-                preview.referrerPolicy = "strict-origin-when-cross-origin";
-                preview.dataset.src = withPreviewAutoplay(view.previewUrl);
-                thumbBox.dataset.previewKind = "iframe";
-            } else {
-                preview.classList.add("media-preview-image");
-                preview.referrerPolicy = "no-referrer";
-                preview.alt = view.title;
-                preview.src = safeUrl(view.img) || fallbackImages.mediaTrend;
-                thumbBox.dataset.previewKind = "image";
-            }
-            thumbBox.classList.add("has-preview");
-            thumbBox.appendChild(preview);
-
-            let clearTimer = 0;
-            const showPreview = () => {
-                window.clearTimeout(clearTimer);
-                if (useIframe && !preview.src) preview.src = preview.dataset.src;
-                card.classList.add("is-previewing");
-                thumbBox.classList.add("is-previewing");
-            };
-            const hidePreview = () => {
-                card.classList.remove("is-previewing");
-                thumbBox.classList.remove("is-previewing");
-                window.clearTimeout(clearTimer);
-                clearTimer = window.setTimeout(() => {
-                    if (useIframe) preview.removeAttribute("src");
-                }, 320);
-            };
-
-            thumbBox.addEventListener("pointerenter", showPreview);
-            thumbBox.addEventListener("pointerleave", hidePreview);
-            thumbBox.addEventListener("click", (event) => {
-                if (thumbBox.dataset.previewKind === "iframe" && thumbBox.classList.contains("is-previewing")) {
-                    event.stopPropagation();
-                }
-            });
-            card.addEventListener("focusin", showPreview);
-            card.addEventListener("focusout", hidePreview);
         }
 
         function buildMeta(sectionKey, values) {
@@ -1159,60 +998,6 @@
             }
 
             return firstText(item.communityName, item.source, item.siteName, item.boardName, sections[sectionKey].label);
-        }
-
-        function getMediaPreviewUrl(item, link, sectionKey) {
-            if (sectionKey !== "mediaTrend") return "";
-
-            const explicitUrl = safeUrl(firstText(item.previewUrl, item.livePreviewUrl, item.embedUrl, item.playerUrl));
-            if (explicitUrl) return explicitUrl;
-
-            const target = safeUrl(link);
-            if (!target) return "";
-
-            try {
-                const url = new URL(target);
-                const parts = url.pathname.split("/").filter(Boolean);
-
-                if (/^(play|live)\.sooplive\.(com|co\.kr)$/.test(url.hostname) && parts.length >= 2) {
-                    return withPreviewAutoplay(`https://play.sooplive.com/${encodeURIComponent(parts[0])}/${encodeURIComponent(parts[1])}/embed`);
-                }
-
-                if (url.hostname === "chzzk.naver.com" && parts[0] === "live" && parts[1]) {
-                    return withPreviewAutoplay(`https://chzzk.naver.com/embed/live/${encodeURIComponent(parts[1])}`);
-                }
-            } catch {
-                return "";
-            }
-
-            return "";
-        }
-
-        function getMediaPreviewType(item, sectionKey) {
-            if (sectionKey !== "mediaTrend") return "";
-
-            const explicitType = firstText(item.previewType, item.previewKind).toLowerCase();
-            if (explicitType === "iframe" || explicitType === "image") return explicitType;
-
-            const platform = firstText(item.platformName, item.source, item.siteName).toLowerCase();
-            if (platform.includes("soop")) return "image";
-            if (platform.includes("치지직") || platform.includes("chzzk")) return "image";
-            return "image";
-        }
-
-        function withPreviewAutoplay(value) {
-            const target = safeUrl(value);
-            if (!target) return "";
-
-            try {
-                const url = new URL(target);
-                url.searchParams.set("autoplay", "1");
-                url.searchParams.set("mute", "0");
-                url.searchParams.set("muted", "0");
-                return url.toString();
-            } catch {
-                return target;
-            }
         }
 
         function findDataList(keys) {
@@ -1291,35 +1076,37 @@
 
         function formatTime(date) {
             return new Intl.DateTimeFormat("ko-KR", {
+                timeZone: "Asia/Seoul",
                 hour: "2-digit",
                 minute: "2-digit"
             }).format(date);
         }
 
-        function buildSyncLabel(store) {
+        function buildNextSyncLabel(store) {
+            const intervalMinutes = firstNumber(store?._meta?.updateIntervalMinutes, 60);
+            const intervalMs = intervalMinutes * 60 * 1000;
+            const updatedAt = firstText(store?._meta?.updatedAt, store?.updatedAt);
             const updatedAtKst = firstText(store?._meta?.updatedAtKst);
-            if (updatedAtKst) return `${updatedAtKst.slice(11, 16)} 갱신`;
+            let lastUpdated = new Date(updatedAt || "");
 
-            const updatedAt = firstText(store?.updatedAt);
-            if (updatedAt) {
-                const date = new Date(updatedAt);
-                if (!Number.isNaN(date.getTime())) return `${formatTime(date)} 갱신`;
+            if (Number.isNaN(lastUpdated.getTime()) && updatedAtKst) {
+                lastUpdated = new Date(`${updatedAtKst.replace(" ", "T")}+09:00`);
             }
 
-            return `${formatTime(new Date())} 갱신`;
+            if (!Number.isNaN(lastUpdated.getTime()) && intervalMs > 0) {
+                let nextTime = lastUpdated.getTime() + intervalMs;
+                const now = Date.now();
+                while (nextTime <= now) nextTime += intervalMs;
+                return `다음 갱신 ${formatTime(new Date(nextTime))}`;
+            }
+
+            return "다음 갱신 대기";
         }
 
         function ageInHours(value) {
             const date = new Date(value || "");
             if (Number.isNaN(date.getTime())) return -1;
             return (Date.now() - date.getTime()) / (60 * 60 * 1000);
-        }
-
-        function normalizeSearchText(value) {
-            return String(value || "")
-                .toLowerCase()
-                .replace(/\s+/g, "")
-                .trim();
         }
 
         function openArticle(link) {
@@ -1329,11 +1116,6 @@
 
         document.querySelectorAll(".main-tab-btn").forEach((button) => {
             button.addEventListener("click", () => setActiveSection(button.dataset.section));
-        });
-
-        searchInput.addEventListener("input", (event) => {
-            searchQuery = event.target.value;
-            paintCards();
         });
 
         renderFeedTabs();
