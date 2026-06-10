@@ -192,6 +192,27 @@
             box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
 
+        .favorite-toggle {
+            width: 100%;
+            min-height: 44px;
+            margin: 0 0 14px;
+            border: 1px solid rgba(255, 61, 104, 0.28);
+            border-radius: 14px;
+            background: rgba(255, 61, 104, 0.1);
+            color: rgba(255, 255, 255, 0.86);
+            font-size: 13px;
+            font-weight: 900;
+            cursor: pointer;
+        }
+
+        .favorite-toggle.active {
+            color: #fff;
+            border-color: rgba(255, 61, 104, 0.64);
+            background:
+                linear-gradient(135deg, rgba(255, 61, 104, 0.28), rgba(54, 215, 255, 0.08)),
+                rgba(255, 255, 255, 0.1);
+        }
+
         .summary-row {
             display: flex;
             justify-content: space-between;
@@ -209,6 +230,14 @@
         }
 
         .top-picks.hidden {
+            display: none;
+        }
+
+        .favorite-panel {
+            margin-bottom: 14px;
+        }
+
+        .favorite-panel.hidden {
             display: none;
         }
 
@@ -397,6 +426,18 @@
             font-weight: 950;
         }
 
+        .trend-badge.rising {
+            color: #071014;
+            background: linear-gradient(135deg, #36d7ff, #b7f36a);
+            border-color: rgba(54, 215, 255, 0.72);
+        }
+
+        .trend-badge.new {
+            color: #fff;
+            background: rgba(54, 215, 255, 0.18);
+            border-color: rgba(54, 215, 255, 0.5);
+        }
+
         .card-actions {
             display: flex;
             gap: 6px;
@@ -514,6 +555,9 @@
             <button class="main-tab-btn" data-section="naverCafe">카페 인기글</button>
             <button class="main-tab-btn" data-section="community">화제글 모음</button>
         </nav>
+
+        <button id="favoriteToggle" class="favorite-toggle" type="button">찜 모아보기 0</button>
+        <section id="favoritePanel" class="top-picks favorite-panel hidden" aria-label="찜 모아보기"></section>
 
         <nav id="feedFilterTabs" class="tab-wrapper filter-tabs" aria-label="세부 필터">
             <button id="tab-mediaHot" class="tab-btn active" data-feed="mediaHot">라이브HOT</button>
@@ -638,8 +682,11 @@
         };
         let rawDataStore = {};
         const favoriteStorageKey = "moaReviewFavorites";
+        const favoriteItemStorageKey = "moaReviewFavoriteItems";
         const yesterdayStorageKey = "moaReviewYesterdayPicks";
         const favoriteLinks = new Set(loadFavorites());
+        const favoriteItems = new Map(loadFavoriteItems().map((item) => [safeUrl(item.link), item]));
+        let favoritePanelOpen = false;
 
         const grid = document.getElementById("cardGrid");
         const syncStatus = document.getElementById("syncStatus");
@@ -648,6 +695,8 @@
         const feedFilterTabs = document.getElementById("feedFilterTabs");
         const topPicks = document.getElementById("topPicks");
         const yesterdayPicks = document.getElementById("yesterdayPicks");
+        const favoriteToggle = document.getElementById("favoriteToggle");
+        const favoritePanel = document.getElementById("favoritePanel");
 
         async function fetchSystem() {
             try {
@@ -659,6 +708,7 @@
                 syncStatus.textContent = buildNextSyncLabel(rawDataStore);
                 syncLocalYesterdayHistory(rawDataStore);
                 renderYesterdayPicks();
+                renderFavoritePanel();
                 renderFeedTabs();
                 paintCards();
             } catch (err) {
@@ -750,7 +800,7 @@
             badgeRow.className = "badge-row";
             for (const badgeText of view.badges) {
                 const badge = document.createElement("span");
-                badge.className = "trend-badge";
+                badge.className = `trend-badge ${getBadgeTone(badgeText)}`;
                 badge.textContent = badgeText;
                 badgeRow.appendChild(badge);
             }
@@ -766,7 +816,7 @@
             if (isFavorite(view.link)) favoriteButton.textContent = "★";
             favoriteButton.addEventListener("click", (event) => {
                 event.stopPropagation();
-                toggleFavorite(view.link, favoriteButton);
+                toggleFavorite(view, favoriteButton);
             });
 
             const shareButton = document.createElement("button");
@@ -823,9 +873,17 @@
 
             return {
                 rank: firstNumber(item.rank, item.naverRank) || index + 1,
+                sectionKey,
                 title,
                 link,
+                source,
                 publishedAt: firstText(item.publishedAt, item.createdAt, item.openDate),
+                viewerCount,
+                viewCount,
+                recommendCount,
+                commentCount,
+                rankDelta: firstNumber(item.rankDelta),
+                isNewEntry: Boolean(item.isNewEntry),
                 img: firstText(
                     item.img,
                     item.thumbnail,
@@ -851,12 +909,15 @@
                     viewCount,
                     recommendCount,
                     commentCount,
-                    source
+                    source,
+                    rankDelta: firstNumber(item.rankDelta),
+                    isNewEntry: Boolean(item.isNewEntry)
                 }),
                 badges: buildBadges({
                     rank: firstNumber(item.rank, item.naverRank) || index + 1,
                     publishedAt: firstText(item.publishedAt, item.createdAt, item.openDate),
-                    sectionKey
+                    rankDelta: firstNumber(item.rankDelta),
+                    isNewEntry: Boolean(item.isNewEntry)
                 })
             };
         }
@@ -947,6 +1008,64 @@
             });
 
             yesterdayPicks.append(title, list);
+        }
+
+        function renderFavoritePanel() {
+            hydrateFavoriteItemsFromCurrentData();
+            updateFavoriteToggle();
+            favoritePanel.innerHTML = "";
+            favoriteToggle.classList.toggle("active", favoritePanelOpen);
+            favoritePanel.classList.toggle("hidden", !favoritePanelOpen);
+            if (!favoritePanelOpen) return;
+
+            const items = [...favoriteItems.values()]
+                .filter((item) => favoriteLinks.has(safeUrl(item.link)))
+                .sort((a, b) => firstNumber(b.savedAt) - firstNumber(a.savedAt));
+
+            const title = document.createElement("div");
+            title.className = "top-picks-title";
+            const left = document.createElement("span");
+            left.textContent = "찜한 글";
+            const right = document.createElement("span");
+            right.textContent = `${items.length}개`;
+            title.append(left, right);
+
+            if (items.length === 0) {
+                const empty = document.createElement("p");
+                empty.className = "empty-state";
+                empty.textContent = "별표를 누른 글이 여기에 모입니다.";
+                favoritePanel.append(title, empty);
+                return;
+            }
+
+            const list = document.createElement("div");
+            list.className = "top-pick-list";
+
+            items.slice(0, maxItems).forEach((item, index) => {
+                const sectionKey = sections[item.sectionKey] ? item.sectionKey : "mediaTrend";
+                const view = toCardView(item, index, sectionKey);
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "top-pick";
+                button.addEventListener("click", () => openArticle(view.link));
+
+                const rank = document.createElement("span");
+                rank.className = "top-pick-rank";
+                rank.textContent = "★";
+
+                const itemTitle = document.createElement("span");
+                itemTitle.className = "top-pick-title";
+                itemTitle.textContent = view.title;
+
+                const tag = document.createElement("span");
+                tag.className = "top-pick-tag";
+                tag.textContent = firstText(item.feedLabel, sections[sectionKey]?.label, "찜");
+
+                button.append(rank, itemTitle, tag);
+                list.appendChild(button);
+            });
+
+            favoritePanel.append(title, list);
         }
 
         function getYesterdayHistory() {
@@ -1070,6 +1189,14 @@
         }
 
         function buildReason(sectionKey, values) {
+            if (values.rankDelta >= 2) {
+                return `지난 갱신보다 ${values.rankDelta}계단 올라 급상승 중이에요.`;
+            }
+
+            if (values.isNewEntry) {
+                return "지난 갱신에는 없던 새 인기글이에요.";
+            }
+
             if (sectionKey === "mediaTrend") {
                 if (values.viewerCount > 0) return `실시간 시청자 ${formatCount(values.viewerCount)}명 기준으로 상위권이에요.`;
                 if (values.viewCount > 0) return `다시보기 조회 ${formatCount(values.viewCount)}회로 반응이 높아요.`;
@@ -1091,29 +1218,39 @@
             return `${values.source || "커뮤니티"} 인기 목록에서 잡힌 글이에요.`;
         }
 
-        function buildBadges({ rank, publishedAt }) {
+        function buildBadges({ rank, publishedAt, rankDelta, isNewEntry }) {
             const badges = [];
+            if (rankDelta >= 2) badges.push(`▲ ${rankDelta}`);
             if (rank <= 3) badges.push("HOT");
             const age = ageInHours(publishedAt);
-            if (age >= 0 && age <= 6) badges.push("NEW");
+            if (isNewEntry || (age >= 0 && age <= 6)) badges.push("NEW");
             return badges.slice(0, 2);
         }
 
-        function toggleFavorite(link, button) {
-            const target = safeUrl(link);
+        function getBadgeTone(text) {
+            if (String(text || "").startsWith("▲")) return "rising";
+            if (String(text || "").toUpperCase() === "NEW") return "new";
+            return "";
+        }
+
+        function toggleFavorite(view, button) {
+            const target = safeUrl(view?.link);
             if (!target) return;
 
             if (favoriteLinks.has(target)) {
                 favoriteLinks.delete(target);
+                favoriteItems.delete(target);
                 button.classList.remove("active");
                 button.textContent = "☆";
             } else {
                 favoriteLinks.add(target);
+                favoriteItems.set(target, toFavoriteSnapshot(view));
                 button.classList.add("active");
                 button.textContent = "★";
             }
 
-            localStorage.setItem(favoriteStorageKey, JSON.stringify([...favoriteLinks]));
+            saveFavorites();
+            renderFavoritePanel();
         }
 
         function loadFavorites() {
@@ -1123,6 +1260,95 @@
             } catch {
                 return [];
             }
+        }
+
+        function loadFavoriteItems() {
+            try {
+                const values = JSON.parse(localStorage.getItem(favoriteItemStorageKey) || "[]");
+                return Array.isArray(values) ? values.filter((item) => safeUrl(item?.link)) : [];
+            } catch {
+                return [];
+            }
+        }
+
+        function saveFavorites() {
+            try {
+                localStorage.setItem(favoriteStorageKey, JSON.stringify([...favoriteLinks]));
+                localStorage.setItem(favoriteItemStorageKey, JSON.stringify([...favoriteItems.values()]));
+            } catch {
+                // Storage can be unavailable in private browser modes.
+            }
+            updateFavoriteToggle();
+        }
+
+        function updateFavoriteToggle() {
+            favoriteToggle.textContent = `찜 모아보기 ${favoriteLinks.size}`;
+        }
+
+        function toFavoriteSnapshot(view) {
+            return {
+                rank: view.rank,
+                title: view.title,
+                link: view.link,
+                img: compactSnapshotImage(view.img, fallbackImages[view.sectionKey] || fallbackImages.naverCafe),
+                thumbnail: compactSnapshotImage(view.img, fallbackImages[view.sectionKey] || fallbackImages.naverCafe),
+                source: firstText(view.source, sections[view.sectionKey]?.label),
+                siteName: firstText(view.source, sections[view.sectionKey]?.label),
+                sectionKey: view.sectionKey,
+                feedLabel: sections[view.sectionKey]?.label || "찜",
+                viewCount: view.viewCount,
+                viewerCount: view.viewerCount,
+                recommendCount: view.recommendCount,
+                commentCount: view.commentCount,
+                publishedAt: view.publishedAt,
+                rankDelta: view.rankDelta,
+                isNewEntry: view.isNewEntry,
+                savedAt: Date.now()
+            };
+        }
+
+        function hydrateFavoriteItemsFromCurrentData() {
+            for (const link of favoriteLinks) {
+                const target = safeUrl(link);
+                if (!target || favoriteItems.has(target)) continue;
+
+                const match = findCurrentItemByLink(target);
+                if (match) {
+                    const view = toCardView(match.item, 0, match.sectionKey);
+                    favoriteItems.set(target, toFavoriteSnapshot(view));
+                } else {
+                    favoriteItems.set(target, {
+                        title: target,
+                        link: target,
+                        img: fallbackImages.mediaTrend,
+                        sectionKey: "mediaTrend",
+                        feedLabel: "찜",
+                        savedAt: 0
+                    });
+                }
+            }
+        }
+
+        function findCurrentItemByLink(target) {
+            for (const [key, value] of Object.entries(rawDataStore || {})) {
+                if (!Array.isArray(value)) continue;
+                const item = value.find((entry) => {
+                    const link = firstText(entry?.link, entry?.url, entry?.articleUrl, entry?.watchUrl, entry?.contentUrl);
+                    return safeUrl(link) === target;
+                });
+                if (item) return { item, sectionKey: inferSectionFromFeedKey(key) };
+            }
+            return null;
+        }
+
+        function inferSectionFromFeedKey(key) {
+            for (const [sectionKey, section] of Object.entries(sections)) {
+                const feeds = section.feeds || [];
+                if (feeds.some((feed) => feed.key === key || (feed.dataKeys || []).includes(key))) {
+                    return sectionKey;
+                }
+            }
+            return "mediaTrend";
         }
 
         function isFavorite(link) {
@@ -1331,6 +1557,12 @@
             button.addEventListener("click", () => setActiveSection(button.dataset.section));
         });
 
+        favoriteToggle.addEventListener("click", () => {
+            favoritePanelOpen = !favoritePanelOpen;
+            renderFavoritePanel();
+        });
+
+        renderFavoritePanel();
         renderFeedTabs();
         fetchSystem();
         setInterval(fetchSystem, syncIntervalMs);
