@@ -1,8 +1,8 @@
-```yaml
-name: OTT 및 제품 실시간 수집 봇
+name: 모아리뷰 실시간 트렌드 수집
 
 on:
   schedule:
+    # Every hour at minute 17. GitHub schedules use UTC; this runs every hour in KST too.
     - cron: "17 * * * *"
   workflow_dispatch:
 
@@ -11,39 +11,38 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # 깃허브 액션 가상 환경에 Node.js 최신 규격(Node 24) 사용을 명시하여 경고를 차단합니다.
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
       TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
       TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
       FIREBASE_AUTH_TOKEN: ${{ secrets.FIREBASE_AUTH_TOKEN }}
+      MAX_ITEMS_PER_CATEGORY: "10"
+      UPDATE_INTERVAL_MINUTES: "60"
+      ENABLE_YOUTUBE_REPLAY: "0"
       REQUIRE_MEDIA_API_SOURCES: "0"
+      REQUIRE_TWITCH_SOURCE: "0"
+      REQUIRE_YOUTUBE_SOURCE: "0"
 
     steps:
-    - name: 내 깃허브 코드 가져오기
-      uses: actions/checkout@v4
+      - name: 코드 가져오기
+        uses: actions/checkout@v4
 
-    - name: 노드(Node.js) 프로그램 설치
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
+      - name: Node.js 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-    - name: 필요한 패키지 설치
-      run: |
-        if [ -f package-lock.json ]; then
-          npm ci
-        else
-          npm install
-        fi
+      - name: 시크릿 연결 확인
+        run: |
+          node -e "for (const k of ['TWITCH_CLIENT_ID','TWITCH_CLIENT_SECRET','YOUTUBE_API_KEY']) console.log(k, process.env[k] ? 'SET' : 'MISSING')"
 
-    - name: 시크릿 연결 확인
-      run: |
-        node -e "console.log('TWITCH_CLIENT_ID:', !!process.env.TWITCH_CLIENT_ID)"
-        node -e "console.log('TWITCH_CLIENT_SECRET:', !!process.env.TWITCH_CLIENT_SECRET)"
-        node -e "console.log('YOUTUBE_API_KEY:', !!process.env.YOUTUBE_API_KEY)"
-
-    - name: 수집 로봇 작동 시작!
-      run: node bot.mjs
-
-```
+      - name: 수집 로봇 작동 시작
+        run: |
+          if [ -f bot.mjs ]; then
+            node bot.mjs
+          elif [ -f outputs/bot.mjs ]; then
+            node outputs/bot.mjs
+          else
+            echo "bot.mjs 파일을 찾을 수 없습니다."
+            exit 1
+          fi
