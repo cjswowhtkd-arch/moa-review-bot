@@ -1,8 +1,8 @@
+```yaml
 name: OTT 및 제품 실시간 수집 봇
 
 on:
   schedule:
-    # 매 시간 17분마다 실행 (예: 1시 17분, 2시 17분...)
     - cron: "17 * * * *"
   workflow_dispatch:
 
@@ -10,8 +10,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    # env의 들여쓰기 칸수를 정렬했습니다.
     env:
+      # 깃허브 액션 가상 환경에 Node.js 최신 규격(Node 24) 사용을 명시하여 경고를 차단합니다.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
       TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
       TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
@@ -19,7 +20,6 @@ jobs:
       FIREBASE_AUTH_TOKEN: ${{ secrets.FIREBASE_AUTH_TOKEN }}
       REQUIRE_MEDIA_API_SOURCES: "0"
 
-    # steps의 들여쓰기 칸수를 정렬했습니다.
     steps:
     - name: 내 깃허브 코드 가져오기
       uses: actions/checkout@v4
@@ -29,7 +29,6 @@ jobs:
       with:
         node-version: '20'
 
-    # 수집 로봇을 돌리기 위해 필요한 라이브러리(axios, dotenv 등)를 가상 컴퓨터에 설치하는 단계입니다.
     - name: 필요한 패키지 설치
       run: |
         if [ -f package-lock.json ]; then
@@ -46,3 +45,5 @@ jobs:
 
     - name: 수집 로봇 작동 시작!
       run: node bot.mjs
+
+```
