@@ -3146,9 +3146,21 @@ function stripHtml(value) {
 }
 
 function cleanCafeName(value) {
-  return stripHtml(value)
-    .replace(/^카페명\s*/i, "")
-    .replace(/^[`'"\u2018\u2019\u201c\u201d]+|[`'"\u2018\u2019\u201c\u201d]+$/g, "");
+  return trimEdgeQuotes(stripHtml(value).replace(/^카페명\s*/i, ""));
+}
+
+function trimEdgeQuotes(value) {
+  const quoteChars = new Set(["`", "'", '"', "\u2018", "\u2019", "\u201c", "\u201d"]);
+  let text = String(value || "").trim();
+
+  while (text && quoteChars.has(text[0])) {
+    text = text.slice(1).trimStart();
+  }
+  while (text && quoteChars.has(text.at(-1))) {
+    text = text.slice(0, -1).trimEnd();
+  }
+
+  return text;
 }
 
 function normalizeCompactText(value) {
