@@ -266,6 +266,21 @@
             padding: 4px 6px;
         }
 
+        .missed-picks {
+            margin-top: -4px;
+        }
+
+        .missed-picks .top-picks-title {
+            color: rgba(255, 255, 255, 0.78);
+        }
+
+        .missed-picks .top-pick {
+            border-color: rgba(54, 215, 255, 0.14);
+            background:
+                linear-gradient(135deg, rgba(54, 215, 255, 0.08), rgba(255, 61, 104, 0.05)),
+                rgba(19, 22, 27, 0.88);
+        }
+
         .grid-container {
             display: flex;
             flex-direction: column;
@@ -509,6 +524,7 @@
         </nav>
 
         <section id="topPicks" class="top-picks hidden" aria-label="오늘의 TOP 3"></section>
+        <section id="yesterdayPicks" class="top-picks missed-picks hidden" aria-label="어제 놓친 인기글"></section>
 
         <div class="summary-row">
             <span id="activeSummary">라이브HOT TOP 10</span>
@@ -523,6 +539,7 @@
     <script type="module">
         const dbEndpoint = "https://chosanghee00001-default-rtdb.firebaseio.com/categories.json";
         const maxItems = 10;
+        const yesterdayLimit = 5;
         const syncIntervalMs = 60 * 60 * 1000;
         const fallbackImages = {
             naverCafe: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=900&q=80",
@@ -621,6 +638,7 @@
         };
         let rawDataStore = {};
         const favoriteStorageKey = "moaReviewFavorites";
+        const yesterdayStorageKey = "moaReviewYesterdayPicks";
         const favoriteLinks = new Set(loadFavorites());
 
         const grid = document.getElementById("cardGrid");
@@ -629,6 +647,7 @@
         const activeSource = document.getElementById("activeSource");
         const feedFilterTabs = document.getElementById("feedFilterTabs");
         const topPicks = document.getElementById("topPicks");
+        const yesterdayPicks = document.getElementById("yesterdayPicks");
 
         async function fetchSystem() {
             try {
@@ -638,6 +657,8 @@
 
                 rawDataStore = await res.json() || {};
                 syncStatus.textContent = buildNextSyncLabel(rawDataStore);
+                syncLocalYesterdayHistory(rawDataStore);
+                renderYesterdayPicks();
                 renderFeedTabs();
                 paintCards();
             } catch (err) {
@@ -882,6 +903,172 @@
             topPicks.append(title, list);
         }
 
+        function renderYesterdayPicks() {
+            yesterdayPicks.innerHTML = "";
+            const history = getYesterdayHistory();
+            const picks = history.items.slice(0, yesterdayLimit);
+            yesterdayPicks.classList.toggle("hidden", picks.length === 0);
+            if (picks.length === 0) return;
+
+            const title = document.createElement("div");
+            title.className = "top-picks-title";
+            const left = document.createElement("span");
+            left.textContent = "어제 놓친 인기글";
+            const right = document.createElement("span");
+            right.textContent = history.dateKey ? history.dateKey.slice(5).replace("-", ".") : "YESTERDAY";
+            title.append(left, right);
+
+            const list = document.createElement("div");
+            list.className = "top-pick-list";
+
+            picks.forEach((item, index) => {
+                const rawSectionKey = firstText(item.sectionKey, item.type, "mediaTrend");
+                const sectionKey = sections[rawSectionKey] ? rawSectionKey : "mediaTrend";
+                const view = toCardView(item, index, sectionKey);
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "top-pick";
+                button.addEventListener("click", () => openArticle(view.link));
+
+                const rank = document.createElement("span");
+                rank.className = "top-pick-rank";
+                rank.textContent = String(index + 1).padStart(2, "0");
+
+                const itemTitle = document.createElement("span");
+                itemTitle.className = "top-pick-title";
+                itemTitle.textContent = view.title;
+
+                const tag = document.createElement("span");
+                tag.className = "top-pick-tag";
+                tag.textContent = firstText(item.feedLabel, sections[sectionKey]?.label, "HOT");
+
+                button.append(rank, itemTitle, tag);
+                list.appendChild(button);
+            });
+
+            yesterdayPicks.append(title, list);
+        }
+
+        function getYesterdayHistory() {
+            const serverItems = rawDataStore?._history?.yesterdayPicks;
+            if (Array.isArray(serverItems) && serverItems.length > 0) {
+                return {
+                    dateKey: firstText(rawDataStore?._history?.yesterdayDateKst),
+                    items: serverItems
+                };
+            }
+
+            try {
+                const saved = JSON.parse(localStorage.getItem(yesterdayStorageKey) || "{}");
+                const items = Array.isArray(saved.yesterdayPicks) ? saved.yesterdayPicks : [];
+                return {
+                    dateKey: firstText(saved.yesterdayDateKey),
+                    items
+                };
+            } catch {
+                return { dateKey: "", items: [] };
+            }
+        }
+
+        function syncLocalYesterdayHistory(store) {
+            const todayKey = getStoreDateKey(store) || formatKstDateKey(new Date());
+            const todayPicks = buildSnapshotPicks(store);
+            if (!todayKey || todayPicks.length === 0) return;
+
+            try {
+                const saved = JSON.parse(localStorage.getItem(yesterdayStorageKey) || "{}");
+                const next = {
+                    dateKey: todayKey,
+                    todayPicks,
+                    yesterdayDateKey: firstText(saved.yesterdayDateKey),
+                    yesterdayPicks: Array.isArray(saved.yesterdayPicks) ? saved.yesterdayPicks : []
+                };
+
+                if (saved.dateKey && saved.dateKey !== todayKey && Array.isArray(saved.todayPicks) && saved.todayPicks.length > 0) {
+                    next.yesterdayDateKey = saved.dateKey;
+                    next.yesterdayPicks = saved.todayPicks;
+                }
+
+                localStorage.setItem(yesterdayStorageKey, JSON.stringify(next));
+            } catch {
+                // Storage can be unavailable in private browser modes.
+            }
+        }
+
+        function buildSnapshotPicks(store) {
+            const sources = [
+                { key: "mediaHot", sectionKey: "mediaTrend", feedLabel: "실시간 방송", max: 4 },
+                { key: "daily", sectionKey: "naverCafe", feedLabel: "카페 인기글", max: 4 },
+                { key: "communityPopular", sectionKey: "community", feedLabel: "화제글 모음", max: 4 }
+            ];
+            const lists = sources.map((source) =>
+                normalizeList(store?.[source.key]).slice(0, source.max).map((item) => toSnapshotPick(item, source))
+            );
+            const merged = [];
+            const maxLength = Math.max(...lists.map((items) => items.length), 0);
+
+            for (let index = 0; index < maxLength; index += 1) {
+                for (const list of lists) {
+                    if (list[index]) merged.push(list[index]);
+                    if (merged.length >= maxItems) break;
+                }
+                if (merged.length >= maxItems) break;
+            }
+
+            return dedupeSnapshotPicks(merged).slice(0, maxItems);
+        }
+
+        function toSnapshotPick(item, source) {
+            const image = compactSnapshotImage(
+                firstText(item.img, item.thumbnail, item.thumbnailUrl, item.image, item.videoThumbnail, item.contentThumbnail),
+                fallbackImages[source.sectionKey] || fallbackImages.naverCafe
+            );
+
+            return {
+                rank: firstNumber(item.rank, item.naverRank),
+                title: firstText(item.title, item.subject, item.name, item.videoTitle, "제목 없음"),
+                link: firstText(item.link, item.url, item.articleUrl, item.watchUrl, item.contentUrl),
+                img: image,
+                thumbnail: image,
+                source: firstText(item.source, item.siteName, item.cafeName, item.communityName, item.platformName, source.feedLabel),
+                siteName: firstText(item.siteName, item.source, source.feedLabel),
+                boardName: firstText(item.boardName, item.channelName, source.feedLabel),
+                cafeName: firstText(item.cafeName, item.source),
+                communityName: firstText(item.communityName, item.source),
+                platformName: firstText(item.platformName, item.source),
+                channelName: firstText(item.channelName, item.boardName),
+                sectionKey: source.sectionKey,
+                feedKey: source.key,
+                feedLabel: source.feedLabel,
+                viewCount: firstNumber(item.viewCount, item.readCount, item.views),
+                readCount: firstNumber(item.readCount, item.viewCount),
+                viewerCount: firstNumber(item.viewerCount, item.concurrentUserCount),
+                concurrentUserCount: firstNumber(item.concurrentUserCount, item.viewerCount),
+                recommendCount: firstNumber(item.recommendCount, item.likeCount, item.likes),
+                commentCount: firstNumber(item.commentCount, item.comments, item.replyCount),
+                publishedAt: firstText(item.publishedAt, item.createdAt, item.openDate),
+                mediaCategory: firstText(item.mediaCategory, item.category),
+                communityCategory: firstText(item.communityCategory)
+            };
+        }
+
+        function dedupeSnapshotPicks(items) {
+            const seen = new Set();
+            return items.filter((item) => {
+                const key = safeUrl(item.link) || normalizeDedupeText(item.title);
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }
+
+        function compactSnapshotImage(value, fallbackImage) {
+            const image = String(value || "").trim();
+            if (!image) return fallbackImage;
+            if (image.startsWith("data:image/") && image.length > 120000) return fallbackImage;
+            return image;
+        }
+
         function buildReason(sectionKey, values) {
             if (sectionKey === "mediaTrend") {
                 if (values.viewerCount > 0) return `실시간 시청자 ${formatCount(values.viewerCount)}명 기준으로 상위권이에요.`;
@@ -1074,12 +1261,38 @@
             }
         }
 
+        function normalizeDedupeText(value) {
+            return String(value || "")
+                .toLowerCase()
+                .replace(/\s+/g, "")
+                .slice(0, 80);
+        }
+
         function formatTime(date) {
             return new Intl.DateTimeFormat("ko-KR", {
                 timeZone: "Asia/Seoul",
                 hour: "2-digit",
                 minute: "2-digit"
             }).format(date);
+        }
+
+        function formatKstDateKey(date) {
+            return new Intl.DateTimeFormat("sv-SE", {
+                timeZone: "Asia/Seoul",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit"
+            }).format(date);
+        }
+
+        function getStoreDateKey(store) {
+            const updatedAtKst = firstText(store?._meta?.updatedAtKst);
+            if (/^\d{4}-\d{2}-\d{2}/.test(updatedAtKst)) return updatedAtKst.slice(0, 10);
+
+            const updatedAt = firstText(store?._meta?.updatedAt, store?.updatedAt);
+            const date = new Date(updatedAt || "");
+            if (Number.isNaN(date.getTime())) return "";
+            return formatKstDateKey(date);
         }
 
         function buildNextSyncLabel(store) {
